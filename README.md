@@ -1,6 +1,6 @@
 # Langstone-JR, based on Langstone-V3 SDR Transceiver by Colin Durbridge G4EML
 
-Modified by my with new graphics more information on screen and new funtions
+Modified by Jacinto CU2ED, with new graphics more information on screen and new funtions
 
 # Currently supports the HackRF One, the Raspberry Pi 5  and the official 7" LCD Display.
 
