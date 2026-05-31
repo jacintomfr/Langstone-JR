@@ -1,0 +1,34 @@
+#!/bin/bash
+cd /home/pi
+cp /home/pi/Langstone/Langstone_Pluto.conf /tmp
+cp /home/pi/Langstone/Langstone_Hack.conf /tmp
+if (grep -q Pluto /home/pi/Langstone/run); then
+  echo "Saving Pluto"  
+  PLUTO=1
+else
+  echo "Saving HackRF"
+  PLUTO=0
+fi
+rm -rf /home/pi/Langstone
+git clone http://www.github.com/g4eml/Langstone-V3
+mv Langstone-V3 Langstone
+cp /tmp/Langstone_Pluto.conf /home/pi/Langstone
+cp /tmp/Langstone_Hack.conf /home/pi/Langstone
+chmod +x /home/pi/Langstone/build
+chmod +x /home/pi/Langstone/run
+chmod +x /home/pi/Langstone/stop
+chmod +x /home/pi/Langstone/update
+chmod +x /home/pi/Langstone/set_pluto
+chmod +x /home/pi/Langstone/set_sound
+/home/pi/Langstone/build
+if [ $PLUTO -eq 1 ]; then
+ echo "Restore Pluto"
+ sudo cp /home/pi/Langstone/run_pluto /home/pi/Langstone/run
+ sudo cp /home/pi/Langstone/stop_pluto /home/pi/Langstone/stop
+else
+ echo "Restoring HackRF"
+ sudo cp /home/pi/Langstone/run_hack /home/pi/Langstone/run
+ sudo cp /home/pi/Langstone/stop_hack /home/pi/Langstone/stop
+fi
+
+

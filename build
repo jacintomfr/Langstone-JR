@@ -1,0 +1,5 @@
+cc /home/pi/Langstone/LangstoneGUI_Pluto.c -o /home/pi/Langstone/GUI_Pluto -liio -llgpio -lz -lm
+cc /home/pi/Langstone/LangstoneGUI_Hack.c -o /home/pi/Langstone/GUI_Hack -llgpio -lz -lm
+cc /home/pi/Langstone/LangstoneGUI_Lime.c -o /home/pi/Langstone/GUI_Lime -llgpio -lz -lm
+cc /home/pi/Langstone/HW_Test.c -o /home/pi/Langstone/HW_Test -llgpio -lz
+cc /home/pi/Langstone/Pluto_Test.c -o /home/pi/Langstone/Pluto_Test -liio

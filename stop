@@ -1,0 +1,10 @@
+echo Stopping GNU Radio Modules
+killall python >/dev/null 2>&1
+echo Stopping GUI
+killall /home/pi/Langstone/GUI_Hack >/dev/null 2>&1
+   if (grep -q "RotateScreen 1" /home/pi/Langstone/Langstone_Hack.conf) then
+      sudo cp /home/pi/Langstone/splash_inv.bgra /dev/fb0   
+   else  
+      sudo cp /home/pi/Langstone/splash.bgra /dev/fb0
+   fi   
+

@@ -1,0 +1,159 @@
+
+##################################################
+# Piped Commands TRx Control Thread for Hayling Transceiver Pluto Version 
+# Author: G4EML
+# Needs to be manually added into Gnu Radio Flowgraph
+##################################################
+
+####################################################
+#Add these imports to the top
+#####################################################
+ 
+import os
+import errno
+
+#######################################################
+# Add these lines at the start of the Variables section
+#######################################################
+
+        plutoip=os.environ.get('PLUTO_IP')
+        if plutoip==None :
+          plutoip='pluto.local'
+        plutoip='ip:' + plutoip
+        
+########################################################
+# change the pluto sink definition to  this
+########################################################
+
+        self.iio_pluto_sink_0 = iio.fmcomms2_sink_fc32(plutoip, [True, True], 0x800, False)   
+             
+########################################################
+# change the pluto source definition to  this
+########################################################
+
+        self.iio_pluto_source_0 = iio.fmcomms2_source_fc32(plutoip, [True, True], 0x800)
+        
+#######################################################
+# Manually add just before the Main () Function
+# to provide support for Piped commands
+#######################################################
+def docommands(tb):
+  try:
+    os.mkfifo("/tmp/langstoneTRx")
+  except OSError as oe:
+    if oe.errno != errno.EEXIST:
+      raise    
+  ex=False
+  lastbase=0
+  while not ex:
+    fifoin=open("/tmp/langstoneTRx",'r')
+    while True:
+       try:
+        with fifoin as filein:
+         for line in filein:
+           line=line.strip()
+           if line[0]=='Q':
+              ex=True                  
+           if line[0]=='U':
+              value=int(line[1:])
+              tb.set_Rx_Mute(value)
+           if line[0]=='H':
+              value=int(line[1:])
+              if value==1:   
+                  tb.lock()
+              if value==0:
+                  tb.unlock() 
+           if line[0]=='O':
+              value=int(line[1:])
+              tb.set_RxOffset(value)  
+           if line[0]=='V':
+              value=int(line[1:])
+              tb.set_AFGain(value)
+           if line[0]=='L':
+              value=int(line[1:])
+              tb.set_Rx_LO(value)
+           if line[0]=='A':
+              value=int(line[1:])
+              tb.set_Rx_Gain(value) 
+           if line[0]=='F':
+              value=int(line[1:])
+              tb.set_Rx_Filt_High(value) 
+           if line[0]=='I':
+              value=int(line[1:])
+              tb.set_Rx_Filt_Low(value) 
+           if line[0]=='M':
+              value=int(line[1:])
+              tb.set_Rx_Mode(value) 
+              tb.set_Tx_Mode(value)
+           if line=='R':
+              tb.set_PTT(False) 
+           if line=='T':
+              tb.set_PTT(True)
+           if line[0]=='K':
+              value=int(line[1:])
+              tb.set_KEY(value) 
+           if line[0]=='B':
+              value=int(line[1:])
+              tb.set_ToneBurst(value) 
+           if line[0]=='G':
+              value=int(line[1:])
+              tb.set_MicGain(value) 
+           if line[0]=='g':
+              value=int(line[1:])
+              tb.set_FMMIC(value)
+           if line[0]=='d':
+              value=int(line[1:])
+              tb.set_AMMIC(value)
+           if line[0]=='f':
+              value=int(line[1:])
+              tb.set_Tx_Filt_High(value) 
+           if line[0]=='i':
+              value=int(line[1:])
+              tb.set_Tx_Filt_Low(value)     
+           if line[0]=='l':
+              value=int(line[1:])
+              tb.set_Tx_LO(value)  
+           if line[0]=='a':
+              value=int(line[1:])
+              tb.set_Tx_Gain(value)     
+           if line[0]=='C':
+              value=int(line[1:])
+              tb.set_CTCSS(value)   
+           if line[0]=='W':
+              value=int(line[1:])
+              tb.set_FFT_SEL(value) 
+           if line[0]=='Y':
+              # AGC level adjust: Y<dB> e.g. Y0, Y-10, Y+10
+              value=int(line[1:])
+              tb.set_AGC_Level(value)
+           if line[0]=='J':
+              # AGC3 control — J0=OFF J1=FAST J2=MED J3=SLOW J4=LONG
+              # Parameters optimised for SSB at 48kHz (attack/decay rates)
+              # Time constants: F=4ms/21ms CW, M=21ms/104ms SSBfast,
+              #                 S=42ms/417ms SSBnormal, L=208ms/2s SSBslow
+              value=int(line[1:])
+              params = [
+                (0,       0      ),  # J0 OFF  — bypass
+                (5e-3,    1e-3   ),  # J1 FAST — attack 4ms,   decay 21ms
+                (1e-3,    2e-4   ),  # J2 MED  — attack 21ms,  decay 104ms
+                (5e-4,    5e-5   ),  # J3 SLOW — attack 42ms,  decay 417ms
+                (1e-4,    1e-5   ),  # J4 LONG — attack 208ms, decay 2s
+              ]
+              if 0 <= value < len(params):
+                tb.set_AGC_Params(*params[value])
+                                                                                
+       except:
+         break
+
+########################################################
+
+
+#########################################################
+#Replace the Main() function with this
+########################################################
+    tb = top_block_cls()
+    tb.start()
+    docommands(tb)
+    tb.stop()
+    tb.wait()
+#########################################################
