@@ -81,7 +81,7 @@ The preferred installation method only needs a Windows PC connected to the same 
 - Log in (user: pi, password: raspberry) then cut and paste the following code in, one line at a time:
 
 
-```
+
 ## For the HackRF One
 ```sh
 wget https://github.com/jacintomfr/Langstone-JR.git
