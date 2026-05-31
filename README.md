@@ -1,11 +1,8 @@
 # Langstone-JR, based on Langstone-V3 SDR Transceiver by Colin Durbridge G4EML
 
 Modified by my with new graphics more information on screen and new funtions
-Fist version working with HackRF on RPi5 with V1 LCD
 
-# Langstone-V3 SDR Transceiver by Colin Durbridge G4EML
-
-# Currently supports the Adalm Pluto or the HackRF One, the Raspberry Pi 5  and the official 7" LCD Display.
+# Currently supports the HackRF One, the Raspberry Pi 5  and the official 7" LCD Display.
 
 This is an experimental project to produce a simple VHF, UHF and Microwave SDR Transceiver operating on SSB CW and FM.
 
@@ -23,7 +20,7 @@ Currently only the following hardware is supported:-
 
 - RPi5 to Touchscreen flat cable. (this will need to be purchased seperately as the cable supplied with the Touch Screen is not suitable)
 
-- Adalm Pluto or HackRF One SDR Modules. 
+- HackRF One SDR Modules. 
 
 - USB Audio module. Connected to loudspeaker or headphones and microphone. Devices using the CM108 Chip can also use the Volume Down button as a PTT input. 
  
@@ -83,15 +80,11 @@ The preferred installation method only needs a Windows PC connected to the same 
 
 - Log in (user: pi, password: raspberry) then cut and paste the following code in, one line at a time:
 
-## For the Adalm Pluto
-```sh
-wget https://raw.githubusercontent.com/g4eml/Langstone-V3/master/installPluto.sh
-chmod +x installPluto.sh
-./installPluto.sh
+
 ```
 ## For the HackRF One
 ```sh
-wget https://raw.githubusercontent.com/g4eml/Langstone-V3/master/installHack.sh
+wget https://github.com/jacintomfr/Langstone-JR.git
 chmod +x installHack.sh
 ./installHack.sh
 ```
