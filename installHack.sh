@@ -35,6 +35,7 @@ sudo apt-get -y install flex
 sudo apt-get -y install libaio-dev
 sudo apt-get -y install libzstd-dev
 sudo apt-get -y install hackrf
+sudo apt install imagemagick
 
 echo "#################################"
 echo "##        Install LibIIO       ##"
