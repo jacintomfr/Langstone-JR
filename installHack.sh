@@ -1,3 +1,6 @@
+sudo apt install imagemagick
+
+
 #!/bin/bash
 # Langstone-V3 Install script 
 # Buster Version G4EML 08/08/24
@@ -15,7 +18,7 @@ echo "#################################"
 
 # Update the distribution
 sudo apt-get -y update
-sudo apt-get -y dist-upgrade
+#sudo apt-get -y dist-upgrade
 
 
 echo "#################################"
@@ -35,6 +38,7 @@ sudo apt-get -y install flex
 sudo apt-get -y install libaio-dev
 sudo apt-get -y install libzstd-dev
 sudo apt-get -y install hackrf
+sudo apt-get -y install sshpass
 sudo apt install imagemagick
 
 echo "#################################"
@@ -48,6 +52,7 @@ cd libiio
 cmake ./
 make all
 sudo make install
+
 
 echo "#################################"
 echo "##        Install lgpio      ##"
@@ -98,6 +103,7 @@ sudo raspi-config nonint do_boot_behaviour B2
 
 sudo rm /etc/profile.d/sshpwd.sh
 
+sudo sed -i '/dtoverlay=vc4-kms-v3d/s/^/#/' /boot/firmware/config.txt
 
 #make Langstone autostart on boot
 
@@ -109,7 +115,7 @@ if !(grep Langstone ~/.bashrc) then
   echo if test -z \"\$SSH_CLIENT\" >> ~/.bashrc 
   echo then >> ~/.bashrc
   echo "stty -echo -icanon" >> ~/.bashrc
-  echo /home/pi/Langstone/run >> ~/.bashrc
+  echo $HOME/Langstone/run >> ~/.bashrc
   echo fi >> ~/.bashrc
 fi
 
@@ -122,6 +128,9 @@ if !(grep global_cursor_default /boot/firmware/cmdline.txt) then
   sudo sed -i '1s,$, vt.global_cursor_default=0,' /boot/firmware/cmdline.txt
 fi
 
+#remove overlay from display driver 
+
+sudo sed -i '/dtoverlay=vc4-fkms-v3d/s/^/#/' /boot/config.txt
 
 echo "#################################"
 echo "##       Reboot and Start      ##"
