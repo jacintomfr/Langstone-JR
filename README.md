@@ -84,7 +84,7 @@ The preferred installation method only needs a Windows PC connected to the same 
 
 ## For the HackRF One
 ```sh
-wget https://github.com/jacintomfr/Langstone-JR.git
+wget https://github.com/jacintomfr/Langstone-JR/blob/main/installHack.sh
 chmod +x installHack.sh
 ./installHack.sh
 ```
