@@ -1,6 +1,3 @@
-sudo apt install imagemagick
-
-
 #!/bin/bash
 # Langstone-V3 Install script 
 # Buster Version G4EML 08/08/24
