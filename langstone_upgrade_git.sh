@@ -22,8 +22,11 @@ UPGRADE_FILES=(
     "LangstoneGUI_Hack.c" "LangstoneGUI_Pluto.c"
     "Lang_TRX_Hack.py"    "Lang_TRX_Pluto.py"
     "ControlTRX_Hack.py"  "ControlTRX_Pluto.py"
-    "langstone_upgrade_git.sh" "version.h"
-    "build" "run" "stop"
+    "langstone_upgrade_git.sh"
+    "run" "stop"
+    # NOTE: "build" and "version.h" are intentionally excluded
+    # build: has auto-increment logic — never overwrite with repo version
+    # version.h: only used for comparison — build auto-updates it
 )
 BUILD_TARGETS=("GUI_Hack" "GUI_Pluto")
 
@@ -215,6 +218,15 @@ rm -f "$REMOTE_VER_FILE"
 ls -dt "$INSTALL_DIR"/backup_* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null
 ok "7/7 Concluido"
 sleep 0.2
+
+# Update version.h to reflect the remote version that was installed
+# The build script will have incremented it — reset to remote base version
+REMOTE_MAJOR=$(echo "$REMOTE_VER" | grep -o 'V[0-9]*' | grep -o '[0-9]*')
+REMOTE_BUILD=$(echo "$REMOTE_VER" | grep -o '[0-9]*$')
+sed -i "s/LANGSTONE_VER_MAJOR  [0-9]*/LANGSTONE_VER_MAJOR  $REMOTE_MAJOR/" "$VER_FILE"
+sed -i "s/LANGSTONE_VER_BUILD  [0-9]*/LANGSTONE_VER_BUILD  $REMOTE_BUILD/" "$VER_FILE"
+sed -i "s/LANGSTONE_VERSION    "V[0-9]*-[0-9]*"/LANGSTONE_VERSION    "$REMOTE_VER"/" "$VER_FILE"
+log "version.h updated to $REMOTE_VER"
 
 echo "SUCCESS:$REMOTE_VER" > "$PROGRESS"
 log "Upgrade completo: $LOCAL_VER -> $REMOTE_VER"
