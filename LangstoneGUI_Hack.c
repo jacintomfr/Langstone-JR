@@ -3666,9 +3666,9 @@ displayFreq(fr);
     if(agcMode != lastAgcMode || statusForceRedraw)
       {
       const char* agcLabels[] = {"AGC OFF","AGC F","AGC M","AGC S","AGC L"};
-      //int agcState = (agcMode == 0) ? BTN_WARN : BTN_ON;
-      //drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY,
-      //                 agcLabels[agcMode], agcState);
+      int agcState = (agcMode == 0) ? BTN_WARN : BTN_ON;
+      drawButtonIC7300(agcButtonX, agcButtonY,
+                       agcLabels[agcMode], agcState);
       lastAgcMode = agcMode;
       }
     setMoni(0);
@@ -4524,7 +4524,7 @@ void takeSnapshot(void)
   for(int cy = settingY-29; cy < settingY; cy++)
     drawLine(0, cy, 799, cy, 0,0,0);
   // Show filename centred vertically in the strip — Y = settingY-18
-  gotoXY(0, settingY-10);
+  gotoXY(0, settingY-18);
   setForeColour(255,220,0);
   textSize=1;
   char snapMsg[140];
