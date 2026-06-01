@@ -252,6 +252,45 @@ enum {USB,LSB,CW,CWN,FM,AM};
 #define BTN_WARN   3
 #define BTN_AMBER  4  // amber style button
 
+char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","Rx Baseband= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Att= ","Rx Gain= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Callsign= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
+enum {S_ZERO,FFT_REF,RX_BASE,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_ATT,RX_GAIN,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
+
+int settingNo=RX_GAIN;
+int setIndex=0;
+int maxSetIndex=10;
+
+enum {FREQ,SETTINGS,VOLUME,SQUELCH,RIT};
+int inputMode=FREQ;
+
+#define NUMCTCSS 52
+int CTCSSTone[NUMCTCSS] = {0,670,693,719,744,770,797,825,854,885,915,948,974,1000,1035,1072,1109,1148,1188,1230,1273,1318,1365,1413,1462,1500,1514,1567,1598,1622,1655,1679,1713,1738,1773,1799,1835,1862,1899,1928,1966,1995,2035,2065,2107,2181,2257,2291,2336,2418,2503,2541};
+
+
+//GUI Layout values X and Y coordinates for each group of buttons.
+
+#define volButtonX 660
+#define volButtonY 300
+#define sqlButtonX 30
+#define sqlButtonY 300
+#define agcButtonX sqlButtonX
+#define agcButtonY 210  // AGC button above SQL — centred between MicGain(181) and SQL indicator(275)
+#define ritButtonX 660
+#define ritButtonY 150
+#define funcButtonsY 429
+#define funcButtonsX 30
+#define buttonHeight 50
+#define buttonSpaceY 55
+#define buttonWidth 100
+#define buttonSpaceX 105
+#define freqDisplayX 150
+#define freqDisplayY 65
+#define freqDisplayCharWidth 40 
+#define freqDisplayCharHeight 45
+#define versionX 670
+#define versionY 15
+#define settingX 200
+#define settingY 390
+
 
 // ── doGitUpgrade() — upgrade from GitHub via langstone_upgrade_git.sh ──────
 void doGitUpgrade(void)
@@ -341,44 +380,6 @@ void doGitUpgrade(void)
   drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
 }
 
-char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","Rx Baseband= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Att= ","Rx Gain= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Callsign= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
-enum {S_ZERO,FFT_REF,RX_BASE,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_ATT,RX_GAIN,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
-
-int settingNo=RX_GAIN;
-int setIndex=0;
-int maxSetIndex=10;
-
-enum {FREQ,SETTINGS,VOLUME,SQUELCH,RIT};
-int inputMode=FREQ;
-
-#define NUMCTCSS 52
-int CTCSSTone[NUMCTCSS] = {0,670,693,719,744,770,797,825,854,885,915,948,974,1000,1035,1072,1109,1148,1188,1230,1273,1318,1365,1413,1462,1500,1514,1567,1598,1622,1655,1679,1713,1738,1773,1799,1835,1862,1899,1928,1966,1995,2035,2065,2107,2181,2257,2291,2336,2418,2503,2541};
-
-
-//GUI Layout values X and Y coordinates for each group of buttons.
-
-#define volButtonX 660
-#define volButtonY 300
-#define sqlButtonX 30
-#define sqlButtonY 300
-#define agcButtonX sqlButtonX
-#define agcButtonY 210  // AGC button above SQL — centred between MicGain(181) and SQL indicator(275)
-#define ritButtonX 660
-#define ritButtonY 150
-#define funcButtonsY 429
-#define funcButtonsX 30
-#define buttonHeight 50
-#define buttonSpaceY 55
-#define buttonWidth 100
-#define buttonSpaceX 105
-#define freqDisplayX 150
-#define freqDisplayY 65
-#define freqDisplayCharWidth 40 
-#define freqDisplayCharHeight 45
-#define versionX 670
-#define versionY 15
-#define settingX 200
-#define settingY 390
 #define popupX 30
 #define popupY 374
 #define FFTX 140
@@ -570,7 +571,6 @@ int main(int argc, char* argv[])
   initPluto();
   initFifos();
   initScreen();
-  fb_open();  // open framebuffer for direct waterfall writes
   initGPIO();
   printf("Initialising Touch at %s\n",touchPath);
   if(touchPresent) initTouch(touchPath);
@@ -759,15 +759,18 @@ int ret;
 // ── Framebuffer direct access helpers ────────────────────────────────────────
 void fb_open(void)
 {
-  if(fbfd >= 0) return;
+  // fbfd is declared and opened by Graphics.h (lgpio/hmi library)
+  // We just use it directly — no need to reopen
+  // If for any reason it's not open, try opening ourselves
+  if(fbfd > 0) return;
   fbfd = open(FB_DEV, O_RDWR);
-  if(fbfd < 0)
-    fprintf(stderr, "fb_open: cannot open %s (waterfall fallback to drawLine)\n", FB_DEV);
+  if(fbfd <= 0)
+    fprintf(stderr, "fb_open: cannot open %s\n", FB_DEV);
 }
 
 void fb_close(void)
 {
-  if(fbfd >= 0) { close(fbfd); fbfd=-1; }
+  // Do not close fbfd — owned by Graphics.h / lgpio
 }
 
 // Write one horizontal row directly to framebuffer

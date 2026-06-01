@@ -395,7 +395,6 @@ int FFTRef = -30;
 // ── Direct framebuffer (waterfall optimisation) ──────────────────────────
 #define FB_DEV     "/dev/fb0"
 #define FB_STRIDE  3200        // 800px × 4 bytes 32bpp
-static int      fbfd     = -1;
 static uint32_t wfRowBuf[520];
 int bandWFFloor[numband]={0};    // waterfall brightness offset per band
 #define WFFloor bandWFFloor[band]
@@ -436,7 +435,6 @@ int main(int argc, char* argv[])
   detectHw();
   initFifos();
   initScreen();
-  fb_open();  // open framebuffer for direct waterfall writes
   initGPIO();
   printf("Initialising Touch at %s\n",touchPath);
   if(touchPresent) initTouch(touchPath);
@@ -708,15 +706,18 @@ void drawScaleLabel(int x, int y, const char *label)
 // ── Framebuffer direct access helpers ────────────────────────────────────────
 void fb_open(void)
 {
-  if(fbfd >= 0) return;
+  // fbfd is declared and opened by Graphics.h (lgpio/hmi library)
+  // We just use it directly — no need to reopen
+  // If for any reason it's not open, try opening ourselves
+  if(fbfd > 0) return;
   fbfd = open(FB_DEV, O_RDWR);
-  if(fbfd < 0)
-    fprintf(stderr, "fb_open: cannot open %s (waterfall fallback to drawLine)\n", FB_DEV);
+  if(fbfd <= 0)
+    fprintf(stderr, "fb_open: cannot open %s\n", FB_DEV);
 }
 
 void fb_close(void)
 {
-  if(fbfd >= 0) { close(fbfd); fbfd=-1; }
+  // Do not close fbfd — owned by Graphics.h / lgpio
 }
 
 // Write one horizontal row directly to framebuffer
