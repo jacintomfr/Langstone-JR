@@ -134,8 +134,6 @@ void takeSnapshot(void);
 char* findUpgradePen(void);
 void doUpgrade(char* script);
 void setAGC(int mode);
-void fb_open(void);
-void fb_close(void);
 void doGitUpgrade(void);
 void drawCallsignDisplay(void);
 
@@ -307,7 +305,18 @@ void doGitUpgrade(void)
   displayStr("A verificar versao...");
 
   remove(PROGRESS_FILE);
-  system("/home/pi/Langstone/langstone_upgrade_git.sh &");
+  // Launch upgrade script in background using fork — system() may block
+  {
+  pid_t pid = fork();
+  if(pid == 0)
+    {
+    // Child: detach from terminal and exec
+    setsid();
+    execl("/bin/bash", "bash", "/home/pi/Langstone/langstone_upgrade_git.sh", NULL);
+    _exit(1);  // exec failed
+    }
+  // Parent continues immediately to poll loop
+  }
 
   int timeout = 200 * 10;  // 200s timeout
   int done = 0;
@@ -361,9 +370,20 @@ void doGitUpgrade(void)
   else if(success == 2)
     {
     char curver[16]=""; sscanf(lastLine,"UP_TO_DATE:%15s",curver);
-    char msg[80]; sprintf(msg,"Ja actualizado: %s",curver);
-    setForeColour(255,220,0); displayStr(msg);
-    sleep(2);
+    // Show version + check time on status line AND settings line
+    // Clear both lines first
+    for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
+    for(int cy=settingY-2; cy<settingY+20; cy++) drawLine(0,cy,799,cy,0,0,0);
+    // Line 1: above settings — version info
+    char msgA[80], msgB[80];
+    sprintf(msgA,"Versao actual: %s", curver);
+    sprintf(msgB,"Sistema actualizado. Sem alteracoes.");
+    gotoXY(0, lineY);       setForeColour(0,220,60);   textSize=1; displayStr(msgA);
+    gotoXY(0, settingY);    setForeColour(255,220,0);  textSize=2; displayStr(msgB);
+    sleep(4);
+    // Clear both lines
+    for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
+    for(int cy=settingY-2; cy<settingY+20; cy++) drawLine(0,cy,799,cy,0,0,0);
     }
   else if(timeout <= 0)
     {
@@ -412,11 +432,7 @@ int bands24 = 0;
 int screenrotate = 0;
 
 // ── Port V3H globals ─────────────────────────────────────────────
-// ── Direct framebuffer (waterfall optimisation) ──────────────────────────
 #define BAND_BITS_RX BAND_BITS_RX  // Pluto alias
-#define FB_DEV     "/dev/fb0"
-#define FB_STRIDE  3200        // 800px × 4 bytes 32bpp
-static uint32_t wfRowBuf[520];
 int bandWFFloor[numband]={0};    // waterfall brightness offset per band
 #define WFFloor bandWFFloor[band]
 int bandSpecStretch[numband];    // spectrum stretch per band
@@ -755,42 +771,13 @@ int ret;
 
 
 
-// ── Framebuffer direct access helpers ────────────────────────────────────────
-void fb_open(void)
-{
-  // fbfd is declared and opened by Graphics.h (lgpio/hmi library)
-  // We just use it directly — no need to reopen
-  // If for any reason it's not open, try opening ourselves
-  if(fbfd > 0) return;
-  fbfd = open(FB_DEV, O_RDWR);
-  if(fbfd <= 0)
-    fprintf(stderr, "fb_open: cannot open %s\n", FB_DEV);
-}
 
-void fb_close(void)
-{
-  // Do not close fbfd — owned by Graphics.h / lgpio
-}
 
 // Write one horizontal row directly to framebuffer
 // x,y = top-left pixel, n = number of pixels, buf = BGRA8888 pixel array
-static inline void fb_write_row(int x, int y, int n, uint32_t *buf)
-{
-  if(fbfd < 0) return;
-  off_t offset = (off_t)y * FB_STRIDE + (off_t)x * 4;
-  lseek(fbfd, offset, SEEK_SET);
-  write(fbfd, buf, (size_t)n * 4);
-}
 
 // Pack R,G,B into BGRA8888 uint32_t (RPi /dev/fb0 default format)
 // If colours appear wrong: swap R and B → use (R<<16)|(G<<8)|B
-static inline uint32_t fb_pixel(int R, int G, int B)
-{
-  // BGRA8888: byte order in memory = B,G,R,A
-  // As uint32_t on little-endian: A<<24 | R<<16 | G<<8 | B
-  return (uint32_t)((255<<24) | (R<<16) | (G<<8) | B);
-}
-
 void waterfall()
 {
   int level,level2;
@@ -918,7 +905,7 @@ void waterfall()
               int inBW = (prel >= bwBarStart && prel <= bwBarEnd);
               float v2 = buf[p][ridx];
               if(!inBW || v2 <= wf_low)
-                { wfRowBuf[p] = 0; continue; }
+                { setPixel(p+FFTX, screen_y, 0,0,0); continue; }
               }
             float v = buf[p][ridx];
             int pr,pg,pb;
@@ -934,14 +921,8 @@ void waterfall()
               else if(pct < 0.777f) { float t=(pct-0.555f)/0.222f; pr=255;            pg=(int)(255-t*255);pb=0;              }
               else                  { float t=(pct-0.777f)/0.223f; pr=255;            pg=0;              pb=(int)(t*100);    }
               }
-            wfRowBuf[p] = fb_pixel(pr, pg, pb);
+            setPixel(p+FFTX, screen_y, pr, pg, pb);
             }
-          // Write full row in one call
-          if(fbfd >= 0)
-            fb_write_row(FFTX, screen_y, points, wfRowBuf);
-          else
-            for(int _p=0;_p<points;_p++){
-              int _c=wfRowBuf[_p]; setPixel(_p+FFTX,screen_y,(_c>>16)&0xFF,(_c>>8)&0xFF,_c&0xFF);}
           }
         }
     

@@ -50,7 +50,7 @@ if [ $PING_EXIT -ne 0 ]; then
     CURL_OUT=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 https://github.com 2>&1)
     log "curl http_code=$CURL_OUT"
     if [ "$CURL_OUT" != "200" ] && [ "$CURL_OUT" != "301" ] && [ "$CURL_OUT" != "302" ]; then
-        err "Sem rede (ping=$PING_EXIT curl=$CURL_OUT)"
+        err "Sem rede ping=$PING_EXIT curl=$CURL_OUT"
         exit 1
     fi
 fi
@@ -77,7 +77,7 @@ else
 fi
 
 if [ ! -s "$REMOTE_VER_FILE" ]; then
-    err "version.h remoto vazio ou nao obtido (http=$FETCH_OUT)"
+    err "version.h remoto vazio ou nao obtido http=$FETCH_OUT"
     log "Content of $REMOTE_VER_FILE: $(cat $REMOTE_VER_FILE 2>/dev/null || echo 'empty')"
     exit 1
 fi
@@ -96,9 +96,31 @@ if [ -z "$REMOTE_VER" ]; then
 fi
 
 if [ "$LOCAL_VER" = "$REMOTE_VER" ]; then
-    echo "UP_TO_DATE:$LOCAL_VER" > "$PROGRESS"
     log "Already up to date: $LOCAL_VER"
     rm -f "$REMOTE_VER_FILE"
+    echo "UP_TO_DATE:$LOCAL_VER" > "$PROGRESS"
+    sleep 2
+    exit 0
+fi
+
+# Only upgrade if remote is NEWER — compare build numbers (Vxx-yyy)
+LOCAL_BUILD=$(echo "$LOCAL_VER" | grep -o '[0-9]*$')
+REMOTE_BUILD=$(echo "$REMOTE_VER" | grep -o '[0-9]*$')
+LOCAL_MAJOR=$(echo "$LOCAL_VER" | grep -o 'V[0-9]*' | grep -o '[0-9]*')
+REMOTE_MAJOR=$(echo "$REMOTE_VER" | grep -o 'V[0-9]*' | grep -o '[0-9]*')
+log "Local: major=$LOCAL_MAJOR build=$LOCAL_BUILD  Remote: major=$REMOTE_MAJOR build=$REMOTE_BUILD"
+
+# Check if remote is newer
+IS_NEWER=0
+if [ "$REMOTE_MAJOR" -gt "$LOCAL_MAJOR" ] 2>/dev/null; then IS_NEWER=1
+elif [ "$REMOTE_MAJOR" -eq "$LOCAL_MAJOR" ] && [ "$REMOTE_BUILD" -gt "$LOCAL_BUILD" ] 2>/dev/null; then IS_NEWER=1
+fi
+
+if [ $IS_NEWER -eq 0 ]; then
+    log "Remote version not newer — no upgrade needed"
+    rm -f "$REMOTE_VER_FILE"
+    echo "UP_TO_DATE:$LOCAL_VER" > "$PROGRESS"
+    sleep 2
     exit 0
 fi
 
@@ -114,12 +136,12 @@ GIT_EXIT=$?
 log "git exit=$GIT_EXIT"
 log "git output: $GIT_OUT"
 if [ $GIT_EXIT -ne 0 ]; then
-    err "git clone falhou (exit=$GIT_EXIT): $GIT_OUT"
+    err "git clone falhou exit=$GIT_EXIT: $GIT_OUT"
     rm -rf "$CLONE_DIR"
     exit 1
 fi
 log "Cloned files: $(ls $CLONE_DIR 2>/dev/null)"
-ok "3/7 Repo OK ($REMOTE_VER)"
+ok "3/7 Repo OK $REMOTE_VER"
 sleep 0.3
 
 # ── STEP 4: Backup ────────────────────────────────────────────────────────────
