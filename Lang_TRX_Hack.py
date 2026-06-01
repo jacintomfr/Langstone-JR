@@ -303,12 +303,15 @@ class Lang_TRX_Hack(gr.top_block):
         self.analog_const_source_x_0 = analog.sig_source_f(0, analog.GR_CONST_WAVE, 0, 0, 0)
         self.analog_agc2_xx_0 = analog.agc2_ff(0.1, 0.00002, (3e-1), 1.0)
         self.analog_agc2_xx_0.set_max_gain(20)
+        # Power probe for noise gate — measures AGC output level
+        self.blocks_probe_signal_f_0 = blocks.probe_signal_f()
 
 
         ##################################################
         # Connections
         ##################################################
         self.connect((self.analog_agc2_xx_0, 0), (self.blocks_multiply_const_vxx_2_1_0, 0))
+        self.connect((self.analog_agc2_xx_0, 0), (self.blocks_probe_signal_f_0, 0))
         self.connect((self.analog_const_source_x_0, 0), (self.blocks_float_to_complex_0_0, 1))
         self.connect((self.analog_nbfm_rx_0, 0), (self.blocks_multiply_const_vxx_2_0, 0))
         self.connect((self.analog_nbfm_tx_0, 0), (self.blocks_multiply_const_vxx_3, 0))
@@ -486,6 +489,17 @@ class Lang_TRX_Hack(gr.top_block):
 
     def set_Rx_Gain(self, Rx_Gain):
         self.Rx_Gain = Rx_Gain
+
+    def set_AGC_Freeze(self, freeze):
+        # Freeze AGC decay when signal absent — prevents gain pumping on silence
+        # freeze=True:  decay=0.000001 (~100s) = effectively frozen
+        # freeze=False: restore normal decay rate for current AGC mode
+        if freeze:
+            self.analog_agc2_xx_0.set_decay_rate(0.000001)
+        else:
+            decay = getattr(self, '_agc_normal_decay', 0.00002)
+            self._agc_normal_decay = decay  # stored for freeze/unfreeze
+            self.analog_agc2_xx_0.set_decay_rate(decay)
 
     def set_AGC_Level(self, level_db):
         # AGC level: ramp reference gradually to avoid gain jump transient
@@ -740,6 +754,37 @@ def docommands(tb):
            if line[0]=='W':
               value=int(line[1:])
               tb.set_FFT_SEL(value) 
+           if line[0]=='~':
+              # Noise gate: ~1=enable ~0=disable
+              # Freezes AGC decay during silence — prevents gain pumping
+              import threading, time
+              value = int(line[1:])
+              tb._ng_run = (value == 1)
+              if value == 1:
+                def _noise_gate():
+                    THRESH = 0.008   # power threshold (below = silence)
+                    HOLD   = 4       # ×50ms = 200ms hold before freeze
+                    hold   = 0
+                    frozen = False
+                    while tb._ng_run:
+                        time.sleep(0.05)
+                        try:
+                            pwr = abs(tb.blocks_probe_signal_f_0.level())
+                            if pwr < THRESH:
+                                hold = min(hold+1, HOLD+1)
+                                if hold > HOLD and not frozen:
+                                    tb.set_AGC_Freeze(True)
+                                    frozen = True
+                            else:
+                                hold = 0
+                                if frozen:
+                                    tb.set_AGC_Freeze(False)
+                                    frozen = False
+                        except: pass
+                    tb.set_AGC_Freeze(False)  # restore on disable
+                threading.Thread(target=_noise_gate, daemon=True).start()
+              else:
+                tb.set_AGC_Freeze(False)
            if line[0]=='Y':
               # AGC level adjust: Y<dB> e.g. Y0, Y-10, Y+10
               value=int(line[1:])
@@ -757,6 +802,30 @@ def docommands(tb):
               ]
               if 0 <= value < len(params):
                 tb.set_AGC_Params(*params[value])
+                # Auto noise gate: enable with AGC, disable when AGC OFF
+                ng_cmd = '~1' if value > 0 else '~0'
+                # Simulate ~ command inline
+                ng_val = 1 if value > 0 else 0
+                import threading, time
+                tb._ng_run = (ng_val == 1)
+                if ng_val == 1:
+                  def _start_ng():
+                    THRESH=0.008; HOLD=4; hold=0; frozen=False
+                    while tb._ng_run:
+                      time.sleep(0.05)
+                      try:
+                        pwr = abs(tb.blocks_probe_signal_f_0.level())
+                        if pwr < THRESH:
+                          hold=min(hold+1,HOLD+1)
+                          if hold>HOLD and not frozen: tb.set_AGC_Freeze(True); frozen=True
+                        else:
+                          hold=0
+                          if frozen: tb.set_AGC_Freeze(False); frozen=False
+                      except: pass
+                    tb.set_AGC_Freeze(False)
+                  threading.Thread(target=_start_ng, daemon=True).start()
+                else:
+                  tb.set_AGC_Freeze(False)
                                                                                 
        except:
          break
