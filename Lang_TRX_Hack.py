@@ -178,7 +178,7 @@ class Lang_TRX_Hack(gr.top_block):
             avg_alpha=0.9,
             average=True,
             shift=False)
-        self.freq_xlating_fir_filter_xxx_0 = filter.freq_xlating_fir_filter_ccc(11, firdes.low_pass(1,529200,23000,2000), RxOffset, 528000)
+        self.freq_xlating_fir_filter_xxx_0 = filter.freq_xlating_fir_filter_ccc(11, firdes.low_pass(1,529200,45000,5000), RxOffset, 528000)
         self.blocks_vector_to_stream_0_0 = blocks.vector_to_stream(gr.sizeof_float*1, 512)
         self.blocks_vector_to_stream_0 = blocks.vector_to_stream(gr.sizeof_float*1, 512)
         self.blocks_selector_0 = blocks.selector(gr.sizeof_gr_complex*1,0,PTT)
@@ -277,7 +277,7 @@ class Lang_TRX_Hack(gr.top_block):
                 48000,
                 Rx_Filt_Low,
                 Rx_Filt_High,
-                100,
+                500,  # transition width 100→500Hz: ~5× fewer taps, ~3ms latency vs 16ms
                 window.WIN_HAMMING,
                 6.76))
         self.audio_source_0 = audio.source(48000, "hw:CARD=Device,DEV=0", False)
@@ -528,14 +528,14 @@ class Lang_TRX_Hack(gr.top_block):
 
     def set_Rx_Filt_Low(self, Rx_Filt_Low):
         self.Rx_Filt_Low = Rx_Filt_Low
-        self.band_pass_filter_0.set_taps(firdes.complex_band_pass(1, 48000, self.Rx_Filt_Low, self.Rx_Filt_High, 100, window.WIN_HAMMING, 6.76))
+        self.band_pass_filter_0.set_taps(firdes.complex_band_pass(1, 48000, self.Rx_Filt_Low, self.Rx_Filt_High, 500, window.WIN_HAMMING, 6.76))
 
     def get_Rx_Filt_High(self):
         return self.Rx_Filt_High
 
     def set_Rx_Filt_High(self, Rx_Filt_High):
         self.Rx_Filt_High = Rx_Filt_High
-        self.band_pass_filter_0.set_taps(firdes.complex_band_pass(1, 48000, self.Rx_Filt_Low, self.Rx_Filt_High, 100, window.WIN_HAMMING, 6.76))
+        self.band_pass_filter_0.set_taps(firdes.complex_band_pass(1, 48000, self.Rx_Filt_Low, self.Rx_Filt_High, 500, window.WIN_HAMMING, 6.76))
         # Also update post-demod low_pass_filter_0 — hardcoded 3kHz was cutting AM highs
         lp_cutoff = abs(self.Rx_Filt_High)
         if lp_cutoff < 3000:  lp_cutoff = 3000
