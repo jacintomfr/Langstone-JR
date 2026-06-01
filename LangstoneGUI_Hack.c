@@ -416,75 +416,6 @@ float sMeterPeak;
 
 
 
-
-// ── doGitUpgrade() — upgrade from GitHub ─────────────────────────────────────
-void doGitUpgrade(void)
-{
-  int  lineY = settingY - 29;
-  char lineBuf[100];
-  // Clear status area
-  for(int cy = lineY; cy < settingY + 20; cy++)
-    drawLine(0, cy, 799, cy, 0,0,0);
-  gotoXY(0, lineY); setForeColour(255,220,0); textSize=1;
-  displayStr("GitHub upgrade starting...");
-  FILE *pipe = popen("/home/pi/Langstone/langstone_upgrade_git.sh --gui 2>&1", "r");
-  if(!pipe)
-    {
-    gotoXY(0, lineY); setForeColour(255,50,0);
-    displayStr("ERROR: cannot run upgrade script     ");
-    sleep(3);
-    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
-    return;
-    }
-  int  success = 0;
-  char lineTxt[100];
-  while(fgets(lineBuf, sizeof(lineBuf), pipe))
-    {
-    int len = strlen(lineBuf);
-    if(len > 0 && lineBuf[len-1] == '\n') lineBuf[len-1] = 0;
-    char *text = lineBuf; int isErr = 0;
-    if(strncmp(lineBuf,"MSG:",4)==0)      text = lineBuf+4;
-    else if(strncmp(lineBuf,"OK:",3)==0)  text = lineBuf+3;
-    else if(strncmp(lineBuf,"ERR:",4)==0){ text = lineBuf+4; isErr=1; }
-    if(strstr(lineBuf,"Upgrade complete"))  success = 1;
-    if(strstr(lineBuf,"Already up to date")) success = 2;
-    for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
-    gotoXY(0, lineY);
-    if(isErr) setForeColour(255,50,0); else setForeColour(255,220,0);
-    textSize=1;
-    strncpy(lineTxt, text, 79); lineTxt[79]=0;
-    displayStr(lineTxt);
-    usleep(50000);
-    }
-  pclose(pipe);
-  for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
-  gotoXY(0, lineY);
-  if(success == 1)
-    {
-    setForeColour(0,220,60);
-    displayStr("Upgrade OK — restarting in 3s...     ");
-    sleep(3);
-    system("/home/pi/Langstone/stop");
-    sleep(1);
-    system("/home/pi/Langstone/run &");
-    exit(0);
-    }
-  else if(success == 2)
-    {
-    setForeColour(255,220,0);
-    displayStr("Already up to date                   ");
-    sleep(2);
-    }
-  else
-    {
-    setForeColour(255,50,0);
-    displayStr("Upgrade FAILED — backup restored     ");
-    sleep(3);
-    }
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
-}
-
-
 int main(int argc, char* argv[])
 {  
   initUDP();  
@@ -2063,6 +1994,76 @@ int k1=1;
 #define BTN_DANGER 2
 #define BTN_WARN   3
 #define BTN_AMBER  4
+
+
+// ── doGitUpgrade() — upgrade from GitHub ─────────────────────────────────────
+void doGitUpgrade(void)
+{
+  int  lineY = settingY - 29;
+  char lineBuf[100];
+  // Clear status area
+  for(int cy = lineY; cy < settingY + 20; cy++)
+    drawLine(0, cy, 799, cy, 0,0,0);
+  gotoXY(0, lineY); setForeColour(255,220,0); textSize=1;
+  displayStr("GitHub upgrade starting...");
+  FILE *pipe = popen("/home/pi/Langstone/langstone_upgrade_git.sh --gui 2>&1", "r");
+  if(!pipe)
+    {
+    gotoXY(0, lineY); setForeColour(255,50,0);
+    displayStr("ERROR: cannot run upgrade script     ");
+    sleep(3);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
+    return;
+    }
+  int  success = 0;
+  char lineTxt[100];
+  while(fgets(lineBuf, sizeof(lineBuf), pipe))
+    {
+    int len = strlen(lineBuf);
+    if(len > 0 && lineBuf[len-1] == '\n') lineBuf[len-1] = 0;
+    char *text = lineBuf; int isErr = 0;
+    if(strncmp(lineBuf,"MSG:",4)==0)      text = lineBuf+4;
+    else if(strncmp(lineBuf,"OK:",3)==0)  text = lineBuf+3;
+    else if(strncmp(lineBuf,"ERR:",4)==0){ text = lineBuf+4; isErr=1; }
+    if(strstr(lineBuf,"Upgrade complete"))  success = 1;
+    if(strstr(lineBuf,"Already up to date")) success = 2;
+    for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
+    gotoXY(0, lineY);
+    if(isErr) setForeColour(255,50,0); else setForeColour(255,220,0);
+    textSize=1;
+    strncpy(lineTxt, text, 79); lineTxt[79]=0;
+    displayStr(lineTxt);
+    usleep(50000);
+    }
+  pclose(pipe);
+  for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
+  gotoXY(0, lineY);
+  if(success == 1)
+    {
+    setForeColour(0,220,60);
+    displayStr("Upgrade OK — restarting in 3s...     ");
+    sleep(3);
+    system("/home/pi/Langstone/stop");
+    sleep(1);
+    system("/home/pi/Langstone/run &");
+    exit(0);
+    }
+  else if(success == 2)
+    {
+    setForeColour(255,220,0);
+    displayStr("Already up to date                   ");
+    sleep(2);
+    }
+  else
+    {
+    setForeColour(255,50,0);
+    displayStr("Upgrade FAILED — backup restored     ");
+    sleep(3);
+    }
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
+}
+
+
 
 void drawButtonIC7300(int x, int y, const char *label, int state)
 {
