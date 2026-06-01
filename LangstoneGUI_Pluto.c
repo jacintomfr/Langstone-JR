@@ -338,8 +338,8 @@ void doGitUpgrade(void)
   drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
 }
 
-char * settingText[numSettings]={"Rotate Screen = ","FFT Ref= ", "S-Meter Zero= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Rx Filter High= ","SSB Rx Filter Low= ", "Tx Att= ","Rx Gain= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Repeater Shift= ","CTCSS= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Band Bits (Rx)= ","Band Bits (Tx)= ","Copy Band Bits to Pluto=", "CW Ident= ", "CWID Carrier= ", "CW Break-In Hang Time= ", "24 Bands= ","WF Level= ","AGC Adj= ","Callsign= ","Spec Stretch= "};
-enum {ROTATE,FFT_REF,S_ZERO,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_FILT_HIGH,SSB_FILT_LOW,TX_ATT,RX_GAIN,SSB_MIC,FM_MIC,AM_MIC,REP_SHIFT,CTCSS,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,BAND_BITS_RX,BAND_BITS_TX,BAND_BITS_TO_PLUTO,CWID,CW_CARRIER,BREAK_IN_TIME,BANDS24,WF_FLOOR,AGC_ADJ,CALLSIGN,SPEC_STRETCH};
+char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","Rx Baseband= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Amp= ","Tx Gain= ","Rx Amp= ","Rx Gain= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Callsign= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
+enum {S_ZERO,FFT_REF,RX_BASE,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_AMP,TX_GAIN,RX_AMP,RX_GAIN,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
 
 int settingNo=RX_GAIN;
 int setIndex=0;
