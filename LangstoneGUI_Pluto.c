@@ -1,3 +1,63 @@
+// ══════════════════════════════════════════════════════════════════════════════
+//  Langstone V3H — PlutoSDR GUI  (LangstoneGUI_Pluto.c)
+//  Hardware: ADALM-PLUTO, RPi5, LCD 800×480 táctil, GNU Radio 3.10
+//  Build: cc LangstoneGUI_Pluto.c -o GUI_Pluto -liio -llgpio -lz -lm
+// ══════════════════════════════════════════════════════════════════════════════
+//
+//  ── SPECTRUM STRETCH ────────────────────────────────────────────────────────
+//  Soft-knee non-linear curve applied to spectrum display levels.
+//  Purpose: visually stretch signal peaks upward without raising noise floor.
+//
+//  Implementation (search "Soft-knee stretch" in waterfall()):
+//    floor_px = spectrum_rows * 15 / 100   ← noise threshold (15% of height)
+//    powf(norm, 0.65f)                     ← stretch exponent
+//
+//  To adjust — edit and recompile:
+//
+//  EXPONENT (powf second argument):
+//    1.0f  → linear, no stretch (original behaviour)
+//    0.8f  → gentle stretch — subtle improvement
+//    0.65f → moderate stretch (current default) — signals ~10px higher
+//    0.5f  → strong stretch (sqrt) — signals very visible, noise still low
+//    0.3f  → aggressive — most signals near top, loses dynamic range
+//
+//  FLOOR (noise threshold):
+//    spectrum_rows * 10 / 100  → lower floor — more signals get stretched
+//    spectrum_rows * 15 / 100  → current default (15%)
+//    spectrum_rows * 25 / 100  → higher floor — only strong signals stretched
+//    Increase if your band noise floor is high (busy HF bands)
+//    Decrease for quiet bands (VHF/UHF)
+//
+//  NOISE COMPRESSION (below floor):
+//    lv * 7 / 10  → current (30% compression of noise pixels)
+//    lv * 5 / 10  → stronger compression — noise even lower visually
+//    lv * 9 / 10  → lighter compression — more natural noise floor
+//
+//  Example — more aggressive stretch for weak signal work:
+//    floor_px = spectrum_rows * 10 / 100;   // lower threshold
+//    lv = floor_px + (int)((float)max_ab * powf(norm, 0.5f));  // sqrt stretch
+//
+//  Example — subtle, almost linear:
+//    floor_px = spectrum_rows * 20 / 100;
+//    lv = floor_px + (int)((float)max_ab * powf(norm, 0.8f));
+//
+// ──────────────────────────────────────────────────────────────────────────────
+//  ── WATERFALL AUTO NOISE FLOOR ──────────────────────────────────────────────
+//  Histogram O(n) + IIR smoothing. Waterfall and spectrum are INDEPENDENT:
+//    Spectrum: baselevel = fftref - 45  (fixed 45dB window from FFT Ref)
+//    Waterfall: wf_low = wf_low_smooth + WFFloor  (auto + manual offset)
+//  WFFloor adjustable in SET menu "WF Level=" (-20 to +20 dB)
+//  FFT Ref adjustable in SET menu "FFT Ref=" (spectrum top reference)
+//
+// ──────────────────────────────────────────────────────────────────────────────
+//  ── SETTINGS MENU REFERENCE ─────────────────────────────────────────────────
+//  FFT Ref=        Spectrum top reference level (dBFS)
+//  WF Level=       Waterfall brightness offset (-20 to +20 dB)
+//  AGC Adj=        AGC output level (-20 to +20 dB)
+//  Callsign=       Operator callsign display (top-right, textSize=2)
+//  CW Ident=       CW ID string (scroll chars, left/right cursor)
+//
+// ══════════════════════════════════════════════════════════════════════════════
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -8,7 +68,9 @@
 #include <stdlib.h>
 #include <lgpio.h>
 #include <stdio.h>
+#include "version.h"
 #include <string.h>
+#include <math.h>
 #include <zlib.h>
 #include <stdint.h>
 #include <dirent.h>
@@ -71,6 +133,7 @@ void takeSnapshot(void);
 char* findUpgradePen(void);
 void doUpgrade(char* script);
 void setAGC(int mode);
+void doGitUpgrade(void);
 void drawCallsignDisplay(void);
 
 void processGPIO(void);
@@ -164,7 +227,7 @@ int lastmode=0;
 char * modename[nummode]={"USB","LSB","CW ","CWN","FM ","AM "};
 enum {USB,LSB,CW,CWN,FM,AM};
 
-#define numSettings 30
+#define numSettings 31
 
 #define txX       620
 #define txY        15
@@ -186,8 +249,97 @@ enum {USB,LSB,CW,CWN,FM,AM};
 #define BTN_WARN   3
 #define BTN_AMBER  4  // amber style button
 
-char * settingText[numSettings]={"Rotate Screen = ","FFT Ref= ", "S-Meter Zero= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Rx Filter High= ","SSB Rx Filter Low= ", "Tx Att= ","Rx Gain= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Repeater Shift= ","CTCSS= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Band Bits (Rx)= ","Band Bits (Tx)= ","Copy Band Bits to Pluto=", "CW Ident= ", "CWID Carrier= ", "CW Break-In Hang Time= ", "24 Bands= ","WF Level= ","AGC Adj= ","Callsign= "};
-enum {ROTATE,FFT_REF,S_ZERO,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_FILT_HIGH,SSB_FILT_LOW,TX_ATT,RX_GAIN,SSB_MIC,FM_MIC,AM_MIC,REP_SHIFT,CTCSS,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,BAND_BITS_RX,BAND_BITS_TX,BAND_BITS_TO_PLUTO,CWID,CW_CARRIER,BREAK_IN_TIME,BANDS24,WF_FLOOR,AGC_ADJ,CALLSIGN};
+
+// ── doGitUpgrade() — upgrade from GitHub via langstone_upgrade_git.sh ──────
+void doGitUpgrade(void)
+{
+  #define PROGRESS_FILE "/tmp/langstone_upgrade_progress"
+  int lineY = settingY - 29;
+  char lineBuf[120];
+  char lastLine[120] = "";
+
+  // Clear status area
+  for(int cy = lineY; cy < settingY + 20; cy++)
+    drawLine(0, cy, 799, cy, 0,0,0);
+  gotoXY(0, lineY); setForeColour(255,220,0); textSize=1;
+  displayStr("A verificar versao...");
+
+  remove(PROGRESS_FILE);
+  system("/home/pi/Langstone/langstone_upgrade_git.sh &");
+
+  int timeout = 200 * 10;  // 200s timeout
+  int done = 0;
+  int success = 0;
+
+  while(timeout-- > 0 && !done)
+    {
+    usleep(100000);
+    FILE *pf = fopen(PROGRESS_FILE, "rt");
+    if(!pf) continue;
+    if(!fgets(lineBuf, sizeof(lineBuf), pf)) { fclose(pf); continue; }
+    fclose(pf);
+    int len = strlen(lineBuf);
+    if(len > 0 && lineBuf[len-1] == '\n') lineBuf[len-1] = 0;
+    if(strcmp(lineBuf, lastLine) == 0) continue;
+    strncpy(lastLine, lineBuf, 119);
+
+    // Terminal states
+    if(strncmp(lineBuf,"SUCCESS:",8)==0)    { success=1; done=1; continue; }
+    if(strncmp(lineBuf,"UP_TO_DATE:",11)==0){ success=2; done=1; continue; }
+
+    // Parse prefix
+    char *text = lineBuf; int isErr = 0;
+    if(strncmp(lineBuf,"MSG:",4)==0)       text = lineBuf+4;
+    else if(strncmp(lineBuf,"OK:",3)==0)   text = lineBuf+3;
+    else if(strncmp(lineBuf,"ERR:",4)==0){ text = lineBuf+4; isErr=1; done=1; }
+
+    for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
+    gotoXY(0, lineY);
+    setForeColour(isErr ? 255 : 255, isErr ? 50 : 220, 0);
+    textSize=1;
+    char disp[80]; strncpy(disp,text,79); disp[79]=0;
+    displayStr(disp);
+    }
+
+  // Final message
+  for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
+  gotoXY(0, lineY);
+  if(success == 1)
+    {
+    // Extract new version from SUCCESS:Vxx-yyy
+    char newver[16]=""; sscanf(lastLine,"SUCCESS:%15s",newver);
+    char msg[80]; sprintf(msg,"Upgrade OK %s - reinicio em 3s",newver);
+    setForeColour(0,220,60); displayStr(msg);
+    sleep(3);
+    system("/home/pi/Langstone/stop");
+    sleep(1);
+    system("/home/pi/Langstone/run &");
+    exit(0);
+    }
+  else if(success == 2)
+    {
+    char curver[16]=""; sscanf(lastLine,"UP_TO_DATE:%15s",curver);
+    char msg[80]; sprintf(msg,"Ja actualizado: %s",curver);
+    setForeColour(255,220,0); displayStr(msg);
+    sleep(2);
+    }
+  else if(timeout <= 0)
+    {
+    setForeColour(255,50,0); displayStr("Timeout - ver upgrade.log  ");
+    sleep(3);
+    }
+  else
+    {
+    setForeColour(255,50,0); displayStr("Falhou - backup restaurado ");
+    sleep(3);
+    }
+
+  remove(PROGRESS_FILE);
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
+}
+
+char * settingText[numSettings]={"Rotate Screen = ","FFT Ref= ", "S-Meter Zero= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Rx Filter High= ","SSB Rx Filter Low= ", "Tx Att= ","Rx Gain= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Repeater Shift= ","CTCSS= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Band Bits (Rx)= ","Band Bits (Tx)= ","Copy Band Bits to Pluto=", "CW Ident= ", "CWID Carrier= ", "CW Break-In Hang Time= ", "24 Bands= ","WF Level= ","AGC Adj= ","Callsign= ","Spec Stretch= "};
+enum {ROTATE,FFT_REF,S_ZERO,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_FILT_HIGH,SSB_FILT_LOW,TX_ATT,RX_GAIN,SSB_MIC,FM_MIC,AM_MIC,REP_SHIFT,CTCSS,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,BAND_BITS_RX,BAND_BITS_TX,BAND_BITS_TO_PLUTO,CWID,CW_CARRIER,BREAK_IN_TIME,BANDS24,WF_FLOOR,AGC_ADJ,CALLSIGN,SPEC_STRETCH};
 
 int settingNo=RX_GAIN;
 int setIndex=0;
@@ -206,6 +358,8 @@ int CTCSSTone[NUMCTCSS] = {0,670,693,719,744,770,797,825,854,885,915,948,974,100
 #define volButtonY 300
 #define sqlButtonX 30
 #define sqlButtonY 300
+#define agcButtonX sqlButtonX
+#define agcButtonY 210  // AGC button above SQL — centred between MicGain(181) and SQL indicator(275)
 #define ritButtonX 660
 #define ritButtonY 150
 #define funcButtonsY 429
@@ -254,7 +408,10 @@ int bands24 = 0;
 int screenrotate = 0;
 
 // ── Port V3H globals ─────────────────────────────────────────────
-int WFFloor = 0;
+int bandWFFloor[numband]={0};    // waterfall brightness offset per band
+#define WFFloor bandWFFloor[band]
+int bandSpecStretch[numband];    // spectrum stretch per band
+#define specStretch bandSpecStretch[band]
 char callSign[12] = "CU2ED      ";  // operator callsign display (max 11 chars + null)
 int  callSignLen  = 5;               // number of active chars in callSign
 float fftRowBuf[512];    // single-read FFT row buffer
@@ -265,7 +422,9 @@ int statusForceRedraw = 0;  // force S-Meter full redraw
 int pmNeedsReset = 0;
 int upgradeConfirm = 0;
 int agcMode = 2;
-int AGCAdj = 0;          // AGC level adjust dB (-20 to +20)
+int bandAGCAdj[numband]={0};     // AGC level adjust per band
+#define AGCAdj bandAGCAdj[band]
+int AGCAdjByMode[6] = {0,0,0,0,0,0};  // AGC level memory per mode (USB,LSB,CW,CWN,FM,AM)
 
 
 int keyDownTimer=0;
@@ -378,7 +537,6 @@ struct iio_device *plutophy;
 
 
 
-
 int main(int argc, char* argv[])
 {
   strcpy(plutoip,"ip:");
@@ -396,6 +554,8 @@ int main(int argc, char* argv[])
   
   lastClock=0;
   readConfig();
+  // Init bandSpecStretch defaults (5) — overwritten by readConfig if saved
+  for(int _i=0;_i<numband;_i++) if(bandSpecStretch[_i]==0) bandSpecStretch[_i]=5;
   setRotation(screenrotate);
   detectHw();
   initPluto();
@@ -701,9 +861,18 @@ void waterfall()
         float wf_range = 1.0f / (wf_high - wf_low);
         for(int r=0;r<rows-20;r++)
           {
-          int ridx = (wfHead + r) % rows;   // ring buffer index
+          int ridx = (wfHead + r) % rows;
           for(int p=0;p<points;p++)
             {
+            // ── TX: black except inside TX filter BW ─────────────────
+            if(transmitting==1 && satMode()==0)
+              {
+              int prel = p - points/2 - bwbaroffset;
+              int inBW = (prel >= bwBarStart && prel <= bwBarEnd);
+              float v2 = buf[p][ridx];
+              if(!inBW || v2 <= wf_low)
+                { setPixel(p+FFTX, FFTY+3+r, 0,0,0); continue; }
+              }
             float v = buf[p][ridx];
             int pr,pg,pb;
             if(v <= wf_low)       { pr=0;   pg=0;   pb=64;  }
@@ -736,35 +905,63 @@ void waterfall()
         // ── Spectrum — fill + curve IC-7300 style ────────────────────
         {
         int specLevel[520];
+        static float specSmooth[520] = {0};  // IIR smoothed spectrum
         scaling = (float)spectrum_rows / (float)(fftref - baselevel);
         for(int p=0;p<points;p++)
           {
           float v=buf[p][wfHead];
           if(v<baselevel) v=baselevel;
           if(v>fftref) v=fftref;
-          specLevel[p]=(int)((v-baselevel)*scaling);
+          float raw = (v - baselevel) * scaling;
+          // IIR: α=0.35 → ~3 frame average (~30ms) — removes random FFT spikes
+          // Asymmetric attack/decay: fast rise, slow fall
+          if(raw > specSmooth[p])
+            specSmooth[p] = 0.6f  * raw + 0.4f  * specSmooth[p];  // fast attack
+          else
+            specSmooth[p] = 0.08f * raw + 0.92f * specSmooth[p];  // slow decay
+          int lv = (int)specSmooth[p];
+          // ── Soft-knee stretch: noise compressed, signals expanded ─
+          {
+          // specStretch: 0=linear, 5=default(0.65), 10=max(0.30)
+          if(specStretch == 0)
+            {
+            specLevel[p] = lv;  // linear, no stretch
+            }
+          else
+            {
+            float sexp = 1.0f - (float)specStretch * 0.07f;
+            int floor_px = spectrum_rows * 15 / 100;
+            if(lv <= floor_px)
+              lv = lv * 7 / 10;
+            else
+              {
+              int above  = lv - floor_px;
+              int max_ab = spectrum_rows - floor_px;
+              float norm = (float)above / (float)max_ab;
+              lv = floor_px + (int)((float)max_ab * powf(norm, sexp));
+              }
+            specLevel[p] = lv;
+            }
           }
-        // Quadratic fill — dark blue
+          }
+        // ── Spectrum fill — blue gradient (dark → bright cyan-blue) ──
         for(int p=0;p<points-1;p++)
           {
           int lv=specLevel[p];
-          if(lv>0)
+          if(lv>2)
             {
-            int sr2=spectrum_rows*spectrum_rows;
-            int brightTop=lv*lv/spectrum_rows;
-            if(brightTop>lv) brightTop=lv;
-            for(int y=brightTop;y<=lv;y++)
+            for(int y=0; y<=lv; y++)
               {
-              int t=sr2-(spectrum_rows-y)*(spectrum_rows-y);
-              int bl=8+t*40/sr2;
-              drawLine(p+FFTX,FFTY-y,p+FFTX,FFTY-y,0,0,bl);
+              int t=y*255/(lv>0?lv:1);
+              int G=t*180/255;
+              int B=64+t*191/255; if(B>255) B=255;
+              drawLine(p+FFTX,FFTY-y,p+FFTX,FFTY-y,0,G,B);
               }
-            drawLine(p+FFTX, FFTY-lv, p+FFTX, FFTY-brightTop, 0,0,80);
             }
           }
-        // Spectrum curve — bright green
+        // Spectrum curve — bright cyan
         for(int p=0;p<points-1;p++)
-          drawLine(p+FFTX, FFTY-specLevel[p], p+1+FFTX, FFTY-specLevel[p+1], 0,255,30);
+          drawLine(p+FFTX, FFTY-specLevel[p], p+1+FFTX, FFTY-specLevel[p+1], 180,180,180);
 
 
         }
@@ -1255,7 +1452,6 @@ void TempC(void)
           {
           last_cpu_pct = pct;
           textSize=1;
-          // colour: green<50%, yellow<80%, red>=80%
           setForeColour(255,220,0);
           gotoXY(5,123);  displayStr("CPU%=");
           sprintf(vStr,"%3d%%  ", pct);
@@ -1844,6 +2040,12 @@ void initGUI()
 
 // Volume Button
   drawButtonIC7300(volButtonX, volButtonY, "Vol", BTN_OFF);
+  // AGC button above SQL
+  {
+  const char* agcLabels[] = {"AGC OFF","AGC F","AGC M","AGC S","AGC L"};
+  int agcState = (agcMode == 0) ? BTN_WARN : BTN_ON;
+  drawButtonIC7300(agcButtonX, agcButtonY, agcLabels[agcMode], agcState);
+  }
  
 
  //bottom row of buttons
@@ -1895,6 +2097,13 @@ void initSDR(void)
 
 void displayMenu()
 {
+  // AGC button above SQL — redrawn here to stay consistent with menu state
+  {
+  const char* agcLabels[] = {"AGC OFF","AGC F","AGC M","AGC S","AGC L"};
+  int agcState = (agcMode == 0) ? BTN_WARN : BTN_ON;
+  drawButtonIC7300(agcButtonX, agcButtonY, agcLabels[agcMode], agcState);
+  }
+
   // BAND — cyan when band popup is open
   drawButtonIC7300(funcButtonsX,              funcButtonsY, "BAND",
                    (popupSel==BAND) ? BTN_ON : BTN_OFF);
@@ -1916,13 +2125,8 @@ void displayMenu()
   // SET
   drawButtonIC7300(funcButtonsX+buttonSpaceX*3, funcButtonsY, "SET",    BTN_WARN);
 
-  // Button 5 — AGC mode cycle
-  {
-  const char* agcLabels[] = {"AGC OFF","AGC F","AGC M","AGC S","AGC L"};
-  int agcState = (agcMode == 0) ? BTN_WARN : BTN_ON;
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY,
-                   agcLabels[agcMode], agcState);
-  }
+  // Button 5 — SNAP (AGC moved above SQL button)
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
 
   // BEACON / CWID / DOTS
   if(sendBeacon > 0)
@@ -2191,6 +2395,17 @@ if(buttonTouched(volButtonX,volButtonY))    //Vol
                                                         
 
 
+// AGC Button (above SQL)
+if(buttonTouched(agcButtonX,agcButtonY))    //AGC mode cycle
+    {
+      if(inputMode==FREQ)
+        {
+        agcMode=(agcMode+1)%5;
+        setAGC(agcMode);
+        }
+      return;
+    }
+
 // Squelch Button   
 
 
@@ -2338,31 +2553,20 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*3,funcButtonsY))    // Button4 =SET o
       }
     }
        
-if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = AGC (FREQ) / UPGRADE (SETTINGS)
+if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = SNAP (FREQ) / UPGRADE (SETTINGS)
     {
     if(inputMode==FREQ)
       {
-      if(satMode()==1)
-        {if(moni==1)setMoni(0);else setMoni(1);return;}
-      // AGC cycle: OFF→F→M→S→L→OFF
-      agcMode=(agcMode+1)%5;
-      setAGC(agcMode);
+      takeSnapshot();
       return;
       }
     else if(inputMode==SETTINGS)
       {
-      char* script=findUpgradePen();
-      if(!script)
-        {upgradeConfirm=0;
-         drawButtonIC7300(funcButtonsX+buttonSpaceX*4,funcButtonsY,"UPGRDE",BTN_DANGER);
-         displayError(" No USB pen found ");sleep(2);
-         displayError("                  ");
-         drawButtonIC7300(funcButtonsX+buttonSpaceX*4,funcButtonsY,"UPGRDE",BTN_OFF);return;}
       if(upgradeConfirm==0)
         {upgradeConfirm=1;
          drawButtonIC7300(funcButtonsX+buttonSpaceX*4,funcButtonsY,"SURE?",BTN_WARN);
-         displayError("  Touch again to upgrade  ");return;}
-      upgradeConfirm=0;doUpgrade(script);return;
+         displayError("  Touch UPGRDE again to upgrade from GitHub  ");return;}
+      upgradeConfirm=0;doGitUpgrade();return;
       }
     else
       {setInputMode(FREQ);}
@@ -2541,6 +2745,10 @@ int buttonTouched(int bx,int by)
 
 void setBand(int b)
 {
+  // Save current band-specific settings before switching
+  if(band >= 0 && band < numband) {
+    // AGCAdj, WFFloor, specStretch already use #define → auto-saved
+  }
   freq=bandFreq[band];
   setFreq(freq);
   mode=bandMode[band];
@@ -2867,6 +3075,11 @@ void setFFTBW(int bw)
 
 void setMode(int md)
 {
+  // ── Save AGCAdj for current mode, restore for new mode ───────────
+  if(mode >= 0 && mode < 6) AGCAdjByMode[mode] = AGCAdj;
+  AGCAdj = AGCAdjByMode[md];
+  { char adj[8]; sprintf(adj,"Y%d",AGCAdj); sendFifo(adj); }
+
   bandMode[band]=md;
   gotoXY(modeX,modeY);
   setForeColour(255,255,0);
@@ -2931,8 +3144,8 @@ void setMode(int md)
   if(md==AM)
     {
     sendFifo("M5");    //AM
-    setRxFilter(-3000,3000);    //AM Filter 
-    setTxFilter(-3000,3000);    //AM Filter 
+    setRxFilter(-5000,5000);    //AM Filter
+    setTxFilter(-5000,5000);    //AM Filter 
     setFreq(freq);    //set the frequency to adjust for CW offset.
     ritButton(0);
     setRit(0);
@@ -3194,7 +3407,7 @@ displayFreq(fr);
       {
       const char* agcLabels[] = {"AGC OFF","AGC F","AGC M","AGC S","AGC L"};
       int agcState = (agcMode == 0) ? BTN_WARN : BTN_ON;
-      drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY,
+      drawButtonIC7300(agcButtonX, agcButtonY,
                        agcLabels[agcMode], agcState);
       lastAgcMode = agcMode;
       }
@@ -3787,6 +4000,14 @@ if(settingNo==BAND_BITS_TX)        // Band Bits Tx
       mouseScroll=0;
       displaySetting(settingNo);
       }
+  if(settingNo==SPEC_STRETCH)      // Spectrum stretch
+      {
+      specStretch = specStretch + mouseScroll;
+      if(specStretch < 0)  specStretch = 0;
+      if(specStretch > 10) specStretch = 10;
+      mouseScroll = 0;
+      displaySetting(settingNo);
+      }
   if(settingNo==CALLSIGN)          // Callsign entry
       {
       int c = (unsigned char)callSign[setIndex];
@@ -4103,7 +4324,7 @@ void doUpgrade(char* script)
 
   // Upgrade screen
   clearScreen();
-  textSize = 3; setForeColour(0,220,255);
+  textSize = 3; setForeColour(180,180,180);
   gotoXY(160,160); displayStr("UPGRADING...");
   textSize = 2; setForeColour(255,255,0);
   gotoXY(160,220); displayStr("Version: "); displayStr(verStr);
@@ -4137,8 +4358,7 @@ void setAGC(int mode)
 
   const char* agcLabels[] = {"AGC OFF","AGC F","AGC M","AGC S","AGC L"};
   int agcState = (agcMode == 0) ? BTN_WARN : BTN_ON;
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY,
-                   agcLabels[agcMode], agcState);
+  drawButtonIC7300(agcButtonX, agcButtonY, agcLabels[agcMode], agcState);
 
   configCounter = configDelay;
 }
@@ -4255,7 +4475,7 @@ void takeSnapshot(void)
   const int W = 800, H = 480, BPP = 4;
 
   // Flash SNAP button — give display time to flush before capturing fb0
-  drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "SNAP", BTN_ON);
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_ON);
   usleep(150000);  // 150ms — enough for LCD controller to render the button
 
   // Open framebuffer
@@ -4263,7 +4483,7 @@ void takeSnapshot(void)
   if(!fb)
     {
     displayError("  SNAP: cannot open fb0  ");
-    drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "SNAP", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
     return;
     }
   unsigned char *fbuf = (unsigned char*)malloc(W * H * BPP);
@@ -4322,7 +4542,7 @@ void takeSnapshot(void)
     {
     free(comp);
     displayError("  SNAP: write failed  ");
-    drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "SNAP", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
     return;
     }
 
@@ -4366,7 +4586,7 @@ void takeSnapshot(void)
   displayStr(snapMsg);
   }
 
-  drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "SNAP", BTN_OFF);
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
 }
 
 // ══ END PORT V3H ══════════════════════════════════════════════
@@ -4374,7 +4594,7 @@ void takeSnapshot(void)
 void showSettingsMenu(void)
   {
     drawButtonIC7300(funcButtonsX,              funcButtonsY, "MENU",   BTN_OFF);
-    drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "SNAP",   BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "MODE",   BTN_OFF);
     drawButtonIC7300(funcButtonsX+buttonSpaceX*2, funcButtonsY, "NEXT", BTN_OFF);
     drawButtonIC7300(funcButtonsX+buttonSpaceX*3, funcButtonsY, "PREV", BTN_OFF);
     drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
@@ -4617,6 +4837,18 @@ if(se==BANDS24)
   sprintf(valStr,"%d",WFFloor);
   displayStr(valStr);
   }
+  if(se==SPEC_STRETCH)
+  {
+  if(specStretch == 0) displayStr("Off (linear)");
+  else
+    {
+    char ssStr[16];
+    // exponent = 1.0 - specStretch * 0.07  (0=1.0, 5=0.65, 10=0.30)
+    float exp = 1.0f - specStretch * 0.07f;
+    sprintf(ssStr,"%d (%.2f)", specStretch, exp);
+    displayStr(ssStr);
+    }
+  }
   if(se==CALLSIGN)
   {
   maxSetIndex = 10;
@@ -4787,7 +5019,7 @@ while(fscanf(conffile,"%49s %99s [^\n]\n",variable,value) !=EOF)
     if(strstr(variable,"bandBitsToPluto")) sscanf(value,"%d",&bandBitsToPluto);
     if(strstr(variable,"bands24")) sscanf(value,"%d",&bands24);
     if(strstr(variable,"WFFloor")) sscanf(value,"%d",&WFFloor);
-    if(strstr(variable,"AGCAdj"))  sscanf(value,"%d",&AGCAdj);
+    if(strstr(variable,"AGCAdjMode")) sscanf(value,"%d %d %d %d %d %d",&AGCAdjByMode[0],&AGCAdjByMode[1],&AGCAdjByMode[2],&AGCAdjByMode[3],&AGCAdjByMode[4],&AGCAdjByMode[5]);
     if(strstr(variable,"callSign")) { strncpy(callSign,value,11); callSign[11]=0; }
     if(strstr(variable,"RotateScreen")) sscanf(value,"%d",&screenrotate);
     if(mode>nummode-1) mode=0;
@@ -4869,8 +5101,13 @@ fprintf(conffile,"volume %d\n",volume);
 fprintf(conffile,"breakInTime %d\n",breakInTime);
 fprintf(conffile,"bandBitsToPluto %d\n",bandBitsToPluto);
 fprintf(conffile,"bands24 %d\n",bands24);
-  fprintf(conffile,"WFFloor %d\n",WFFloor);
-  fprintf(conffile,"AGCAdj %d\n",AGCAdj);
+  for(int _b=0;_b<numband;_b++)
+    fprintf(conffile,"bandWFFloor%02d %d\n",_b,bandWFFloor[_b]);
+  for(int _b=0;_b<numband;_b++)
+    fprintf(conffile,"bandAGCAdj%02d %d\n",_b,bandAGCAdj[_b]);
+  for(int _b=0;_b<numband;_b++)
+    fprintf(conffile,"bandSpecStretch%02d %d\n",_b,bandSpecStretch[_b]);
+fprintf(conffile,"AGCAdjMode %d %d %d %d %d %d\n",AGCAdjByMode[0],AGCAdjByMode[1],AGCAdjByMode[2],AGCAdjByMode[3],AGCAdjByMode[4],AGCAdjByMode[5]);
   fprintf(conffile,"callSign %s\n",callSign);
 fprintf(conffile,"RotateScreen %d\n",screenrotate);
 

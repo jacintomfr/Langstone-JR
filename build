@@ -1,5 +1,35 @@
-cc /home/pi/Langstone/LangstoneGUI_Pluto.c -o /home/pi/Langstone/GUI_Pluto -liio -llgpio -lz -lm
-cc /home/pi/Langstone/LangstoneGUI_Hack.c -o /home/pi/Langstone/GUI_Hack -llgpio -lz -lm
-cc /home/pi/Langstone/LangstoneGUI_Lime.c -o /home/pi/Langstone/GUI_Lime -llgpio -lz -lm
-cc /home/pi/Langstone/HW_Test.c -o /home/pi/Langstone/HW_Test -llgpio -lz
-cc /home/pi/Langstone/Pluto_Test.c -o /home/pi/Langstone/Pluto_Test -liio
+#!/bin/bash
+# Langstone V3H — Build Script
+# Auto-increments LANGSTONE_VER_BUILD in version.h on each build
+
+DIR="/home/pi/Langstone"
+VER_FILE="$DIR/version.h"
+
+# ── Auto-increment build number ──────────────────────────────────────────────
+if [ -f "$VER_FILE" ]; then
+    # Read current build number
+    BUILD=$(grep 'LANGSTONE_VER_BUILD' "$VER_FILE" | grep -o '[0-9]*$')
+    MAJOR=$(grep 'LANGSTONE_VER_MAJOR' "$VER_FILE" | grep -o '[0-9]*$')
+    BUILD=$((BUILD + 1))
+    # Format: Vxx-yyy (zero-padded)
+    NEW_VER=$(printf "V%02d-%03d" $MAJOR $BUILD)
+    # Update version.h
+    sed -i "s/LANGSTONE_VER_BUILD  [0-9]*/LANGSTONE_VER_BUILD  $BUILD/" "$VER_FILE"
+    sed -i "s/LANGSTONE_VERSION    \"V[0-9]*-[0-9]*\"/LANGSTONE_VERSION    \"$NEW_VER\"/" "$VER_FILE"
+    echo "Building $NEW_VER"
+else
+    echo "Warning: version.h not found — building without version"
+fi
+
+# ── Compile ───────────────────────────────────────────────────────────────────
+cc $DIR/LangstoneGUI_Pluto.c -o $DIR/GUI_Pluto -liio -llgpio -lz -lm
+cc $DIR/LangstoneGUI_Hack.c  -o $DIR/GUI_Hack  -llgpio -lz -lm
+cc $DIR/LangstoneGUI_Lime.c  -o $DIR/GUI_Lime  -llgpio 2>/dev/null || true
+cc $DIR/HW_Test.c             -o $DIR/HW_Test   -llgpio
+cc $DIR/Pluto_Test.c          -o $DIR/Pluto_Test -liio
+
+# ── Report ────────────────────────────────────────────────────────────────────
+if [ -f "$VER_FILE" ]; then
+    VER=$(grep 'LANGSTONE_VERSION' "$VER_FILE" | grep -o '"V[^"]*"' | tr -d '"')
+    echo "Build complete: $VER"
+fi

@@ -68,6 +68,7 @@
 #include <stdlib.h>
 #include <lgpio.h>
 #include <stdio.h>
+#include "version.h"
 #include <string.h>
 #include <math.h>
 #include <zlib.h>
@@ -1997,8 +1998,6 @@ int k1=1;
 
 
 // ── doGitUpgrade() — upgrade from GitHub via langstone_upgrade_git.sh ──────
-// Script writes progress to /tmp/langstone_upgrade_progress
-// GUI polls the file and shows each line on screen
 void doGitUpgrade(void)
 {
   #define PROGRESS_FILE "/tmp/langstone_upgrade_progress"
@@ -2010,63 +2009,54 @@ void doGitUpgrade(void)
   for(int cy = lineY; cy < settingY + 20; cy++)
     drawLine(0, cy, 799, cy, 0,0,0);
   gotoXY(0, lineY); setForeColour(255,220,0); textSize=1;
-  displayStr("A iniciar upgrade GitHub...");
+  displayStr("A verificar versao...");
 
-  // Remove old progress file
   remove(PROGRESS_FILE);
-
-  // Launch script in background
   system("/home/pi/Langstone/langstone_upgrade_git.sh &");
 
-  // Poll progress file for up to 180s (build can take a while on RPi5)
-  int timeout = 180 * 10;  // 180s × 10 polls/sec
+  int timeout = 200 * 10;  // 200s timeout
   int done = 0;
   int success = 0;
 
   while(timeout-- > 0 && !done)
     {
-    usleep(100000);  // 100ms poll
-
+    usleep(100000);
     FILE *pf = fopen(PROGRESS_FILE, "rt");
     if(!pf) continue;
     if(!fgets(lineBuf, sizeof(lineBuf), pf)) { fclose(pf); continue; }
     fclose(pf);
-
-    // Strip newline
     int len = strlen(lineBuf);
     if(len > 0 && lineBuf[len-1] == '\n') lineBuf[len-1] = 0;
-
-    // Skip if same as last line (no update yet)
     if(strcmp(lineBuf, lastLine) == 0) continue;
     strncpy(lastLine, lineBuf, 119);
 
-    // Check terminal states
-    if(strcmp(lineBuf, "SUCCESS")    == 0) { success = 1; done = 1; continue; }
-    if(strcmp(lineBuf, "UP_TO_DATE") == 0) { success = 2; done = 1; continue; }
+    // Terminal states
+    if(strncmp(lineBuf,"SUCCESS:",8)==0)    { success=1; done=1; continue; }
+    if(strncmp(lineBuf,"UP_TO_DATE:",11)==0){ success=2; done=1; continue; }
 
     // Parse prefix
     char *text = lineBuf; int isErr = 0;
-    if(strncmp(lineBuf,"MSG:",4)==0)      text = lineBuf+4;
-    else if(strncmp(lineBuf,"OK:",3)==0)  text = lineBuf+3;
+    if(strncmp(lineBuf,"MSG:",4)==0)       text = lineBuf+4;
+    else if(strncmp(lineBuf,"OK:",3)==0)   text = lineBuf+3;
     else if(strncmp(lineBuf,"ERR:",4)==0){ text = lineBuf+4; isErr=1; done=1; }
 
-    // Display
     for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
     gotoXY(0, lineY);
     setForeColour(isErr ? 255 : 255, isErr ? 50 : 220, 0);
     textSize=1;
-    char disp[80]; strncpy(disp, text, 79); disp[79]=0;
+    char disp[80]; strncpy(disp,text,79); disp[79]=0;
     displayStr(disp);
     }
 
-  // Final status
+  // Final message
   for(int cy=lineY; cy<lineY+10; cy++) drawLine(0,cy,799,cy,0,0,0);
   gotoXY(0, lineY);
-
   if(success == 1)
     {
-    setForeColour(0,220,60);
-    displayStr("Upgrade OK - a reiniciar em 3s...");
+    // Extract new version from SUCCESS:Vxx-yyy
+    char newver[16]=""; sscanf(lastLine,"SUCCESS:%15s",newver);
+    char msg[80]; sprintf(msg,"Upgrade OK %s - reinicio em 3s",newver);
+    setForeColour(0,220,60); displayStr(msg);
     sleep(3);
     system("/home/pi/Langstone/stop");
     sleep(1);
@@ -2075,20 +2065,19 @@ void doGitUpgrade(void)
     }
   else if(success == 2)
     {
-    setForeColour(255,220,0);
-    displayStr("Ja actualizado - sem alteracoes  ");
+    char curver[16]=""; sscanf(lastLine,"UP_TO_DATE:%15s",curver);
+    char msg[80]; sprintf(msg,"Ja actualizado: %s",curver);
+    setForeColour(255,220,0); displayStr(msg);
     sleep(2);
     }
   else if(timeout <= 0)
     {
-    setForeColour(255,50,0);
-    displayStr("Timeout - ver upgrade.log        ");
+    setForeColour(255,50,0); displayStr("Timeout - ver upgrade.log  ");
     sleep(3);
     }
   else
     {
-    setForeColour(255,50,0);
-    displayStr("Upgrade falhou - backup restaurado");
+    setForeColour(255,50,0); displayStr("Falhou - backup restaurado ");
     sleep(3);
     }
 
