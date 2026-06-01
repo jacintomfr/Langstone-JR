@@ -2378,6 +2378,9 @@ void initGUI()
     sqlButton(1);
 
     clearWaterfall();    drawCallsignDisplay();
+    // Version display — static, drawn once at startup
+    textSize=1; setForeColour(255,220,0);
+    gotoXY(5,76); displayStr(LANGSTONE_VERSION);
 }
 
 

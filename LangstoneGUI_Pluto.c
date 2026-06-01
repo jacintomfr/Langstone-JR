@@ -2090,6 +2090,9 @@ void initGUI()
     setAGC(agcMode);
     { char adj[8]; sprintf(adj,"Y%d",AGCAdj); sendFifo(adj); }  // restore AGC level
     drawCallsignDisplay();
+    // Version display — static, drawn once at startup
+    textSize=1; setForeColour(255,220,0);
+    gotoXY(5,96); displayStr(LANGSTONE_VERSION);
 }
 
 void setRotation(int rot)
