@@ -10,8 +10,8 @@ else
   PLUTO=0
 fi
 rm -rf /home/pi/Langstone
-git clone http://www.github.com/g4eml/Langstone-V3
-mv Langstone-V3 Langstone
+git clone http://www.github.com/jacintojmfr/Langstone-JR
+mv Langstone-JR Langstone
 cp /tmp/Langstone_Pluto.conf /home/pi/Langstone
 cp /tmp/Langstone_Hack.conf /home/pi/Langstone
 chmod +x /home/pi/Langstone/build
