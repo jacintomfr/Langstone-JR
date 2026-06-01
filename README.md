@@ -1,6 +1,6 @@
 # Langstone-JR version based on Langstone-V3 SDR Transceiver by Colin Durbridge G4EML
 
-# Currently supports the Adalm Pluto or the HackRF One, the Raspberry Pi 5 and the official 7" V1 or V2 LCD Displays.
+# Currently supports only the HackRF One, the Raspberry Pi 5 and the official 7" V1 LCD Displays.
 
 This is an experimental project to produce a simple VHF, UHF and Microwave SDR Transceiver operating on SSB CW and FM.
 
@@ -14,7 +14,7 @@ Currently only the following hardware is supported:-
 
 - Raspberry Pi 5 (Pi 4 is not officially supported but is reported to work OK with the Pluto. Not with the HackRF)
 
-- Official Original Raspberry Pi 7" 800 x 480 Version 1 touchscreen or Version 2 7" 1280 x 720 touchscreen. 
+- Official Original Raspberry Pi 7" 800 x 480 Version 1 touchscreen. 
 
 - RPi5 to Touchscreen flat cable. (this may need to be purchased seperately as the cable supplied with the V1 Touch Screen is not suitable)
 
@@ -104,7 +104,7 @@ The initial build can take some time, however it does not need any user input, s
 
 # Updating the Software. 
 
-If you have a running Langstone-V3 you can update by doing the following. 
+If you have a running Langstone-JR you can update by doing the following. 
 
 Log into the Pi using SSH as described above. 
 
@@ -115,5 +115,7 @@ cd Langstone
 ./update
 
 sudo reboot
+
+In progress there is a button to check version and do auto update routine.
 
 
