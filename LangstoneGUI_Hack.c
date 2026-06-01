@@ -4618,8 +4618,8 @@ void showSettingsMenu(void)
   {
     drawButtonIC7300(funcButtonsX,              funcButtonsY, "MENU",   BTN_OFF);
     drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "MODE",   BTN_OFF);
-    drawButtonIC7300(funcButtonsX+buttonSpaceX*2, funcButtonsY, "NEXT", BTN_OFF);
-    drawButtonIC7300(funcButtonsX+buttonSpaceX*3, funcButtonsY, "PREV", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*2, funcButtonsY, "PREV", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*3, funcButtonsY, "NEXT", BTN_OFF);
     drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
     if(portsdownPresent==1)
       {
