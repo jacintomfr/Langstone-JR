@@ -416,7 +416,6 @@ int screenrotate = 0;
 #define BAND_BITS_RX BAND_BITS_RX  // Pluto alias
 #define FB_DEV     "/dev/fb0"
 #define FB_STRIDE  3200        // 800px × 4 bytes 32bpp
-static int      fbfd     = -1;
 static uint32_t wfRowBuf[520];
 int bandWFFloor[numband]={0};    // waterfall brightness offset per band
 #define WFFloor bandWFFloor[band]
