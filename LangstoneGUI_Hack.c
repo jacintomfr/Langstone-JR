@@ -174,6 +174,8 @@ void setBeacon(int b);
 char* findUpgradePen(void);
 void doUpgrade(char* script);
 void setAGC(int mode);
+void fb_open(void);
+void fb_close(void);
 void doGitUpgrade(void);
 void drawCallsignDisplay(void);
 int firstpass=1;
@@ -390,6 +392,11 @@ int   wfHead = 0;                       // ring buffer head index (current newes
 int points=512;
 int rows=130;
 int FFTRef = -30;
+// ── Direct framebuffer (waterfall optimisation) ──────────────────────────
+#define FB_DEV     "/dev/fb0"
+#define FB_STRIDE  3200        // 800px × 4 bytes 32bpp
+static int      fbfd     = -1;
+static uint32_t wfRowBuf[520];
 int bandWFFloor[numband]={0};    // waterfall brightness offset per band
 #define WFFloor bandWFFloor[band]
 int bandSpecStretch[numband];    // spectrum stretch per band

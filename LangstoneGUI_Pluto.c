@@ -134,6 +134,8 @@ void takeSnapshot(void);
 char* findUpgradePen(void);
 void doUpgrade(char* script);
 void setAGC(int mode);
+void fb_open(void);
+void fb_close(void);
 void doGitUpgrade(void);
 void drawCallsignDisplay(void);
 
@@ -339,8 +341,8 @@ void doGitUpgrade(void)
   drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
 }
 
-char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","Rx Baseband= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Amp= ","Tx Gain= ","Rx Amp= ","Rx Gain= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Callsign= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
-enum {S_ZERO,FFT_REF,RX_BASE,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_AMP,TX_GAIN,RX_AMP,RX_GAIN,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
+char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","Rx Baseband= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Att= ","Rx Gain= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Callsign= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
+enum {S_ZERO,FFT_REF,RX_BASE,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_ATT,RX_GAIN,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
 
 int settingNo=RX_GAIN;
 int setIndex=0;
@@ -409,6 +411,12 @@ int bands24 = 0;
 int screenrotate = 0;
 
 // ── Port V3H globals ─────────────────────────────────────────────
+// ── Direct framebuffer (waterfall optimisation) ──────────────────────────
+#define BAND_BITS_RX BAND_BITS_RX  // Pluto alias
+#define FB_DEV     "/dev/fb0"
+#define FB_STRIDE  3200        // 800px × 4 bytes 32bpp
+static int      fbfd     = -1;
+static uint32_t wfRowBuf[520];
 int bandWFFloor[numband]={0};    // waterfall brightness offset per band
 #define WFFloor bandWFFloor[band]
 int bandSpecStretch[numband];    // spectrum stretch per band
@@ -3873,7 +3881,7 @@ if(settingNo==BAND_BITS_TX)        // Band Bits Tx
       if(bandBitsTx[band]>255) bandBitsTx[band]=255;
       displaySetting(settingNo);  
       }  
-    if(settingNo==BAND_BITS_TO_PLUTO)        // Copy Band Bits to Pluto
+    if(settingNo==BAND_BITS_RX)        // Copy Band Bits to Pluto
       {
       if(mouseScroll>0)
       {
@@ -4763,7 +4771,7 @@ if(se==BAND_BITS_TX)
         }
     } 
   }
-  if(se==BAND_BITS_TO_PLUTO)
+  if(se==BAND_BITS_RX)
   {
     if(bandBitsToPluto==1)
       {
