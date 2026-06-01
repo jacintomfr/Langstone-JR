@@ -68,6 +68,7 @@
 #include <stdlib.h>
 #include <lgpio.h>
 #include <stdio.h>
+#include <fcntl.h>
 #include "version.h"
 #include <string.h>
 #include <math.h>
@@ -428,6 +429,7 @@ int main(int argc, char* argv[])
   detectHw();
   initFifos();
   initScreen();
+  fb_open();  // open framebuffer for direct waterfall writes
   initGPIO();
   printf("Initialising Touch at %s\n",touchPath);
   if(touchPresent) initTouch(touchPath);
@@ -695,6 +697,40 @@ void drawScaleLabel(int x, int y, const char *label)
     }
 }
 
+
+// ── Framebuffer direct access helpers ────────────────────────────────────────
+void fb_open(void)
+{
+  if(fbfd >= 0) return;
+  fbfd = open(FB_DEV, O_RDWR);
+  if(fbfd < 0)
+    fprintf(stderr, "fb_open: cannot open %s (waterfall fallback to drawLine)\n", FB_DEV);
+}
+
+void fb_close(void)
+{
+  if(fbfd >= 0) { close(fbfd); fbfd=-1; }
+}
+
+// Write one horizontal row directly to framebuffer
+// x,y = top-left pixel, n = number of pixels, buf = BGRA8888 pixel array
+static inline void fb_write_row(int x, int y, int n, uint32_t *buf)
+{
+  if(fbfd < 0) return;
+  off_t offset = (off_t)y * FB_STRIDE + (off_t)x * 4;
+  lseek(fbfd, offset, SEEK_SET);
+  write(fbfd, buf, (size_t)n * 4);
+}
+
+// Pack R,G,B into BGRA8888 uint32_t (RPi /dev/fb0 default format)
+// If colours appear wrong: swap R and B → use (R<<16)|(G<<8)|B
+static inline uint32_t fb_pixel(int R, int G, int B)
+{
+  // BGRA8888: byte order in memory = B,G,R,A
+  // As uint32_t on little-endian: A<<24 | R<<16 | G<<8 | B
+  return (uint32_t)((255<<24) | (R<<16) | (G<<8) | B);
+}
+
 void waterfall()
 {
   // ================================================================
@@ -867,6 +903,7 @@ void waterfall()
   for(int r = 0; r < rows-20; r++)
     {
     int ridx = (wfHead + r) % rows;
+    int screen_y = FFTY + 3 + r;  // Y position on LCD for this row
     for(int p = 0; p < points; p++)
       {
       // ── TX: black background, only show signal inside TX filter BW ──
@@ -878,7 +915,7 @@ void waterfall()
         float v  = buf[p][ridx];
         if(!inBW || v <= wf_low)
           {
-          setPixel(p + FFTX, FFTY + 3 + r, 0, 0, 0);  // black outside BW
+          wfRowBuf[p] = 0;  // black — into row buffer, not direct setPixel
           continue;
           }
         // Inside BW: show normal palette
@@ -937,8 +974,14 @@ void waterfall()
           pb = 255;
           }
         }
-      setPixel(p + FFTX, FFTY + 3 + r, pr, pg, pb);
+      wfRowBuf[p] = fb_pixel(pr, pg, pb);
       }
+    // Write full row in one call — replaces 512 individual drawLine calls
+    if(fbfd >= 0)
+      fb_write_row(FFTX, screen_y, points, wfRowBuf);
+    else
+      for(int _p=0;_p<points;_p++){
+        int _c=wfRowBuf[_p]; setPixel(_p+FFTX,screen_y,(_c>>16)&0xFF,(_c>>8)&0xFF,_c&0xFF);}
     }
 
   // ── Outer borders ────────────────────────────────────────────────
@@ -993,7 +1036,7 @@ void waterfall()
     }
     }
 
-  // ── 6. Spectrum fill — blue gradient (dark → bright, matches waterfall) ──
+  // ── 6. Spectrum fill — blue gradient, single loop (dark blue→cyan) ─────
   for(int p = 0; p < points; p++)
     {
     int lv = specLevel[p];
@@ -1001,12 +1044,9 @@ void waterfall()
       {
       for(int y = 0; y <= lv; y++)
         {
-        int t = y * 255 / (lv > 0 ? lv : 1);
-        // Dark blue (0,0,64) at base → bright cyan-blue (0,180,255) at peak
-        int R = 0;
-        int G = t * 180 / 255;
-        int B = 64 + t * 191 / 255; if(B > 255) B = 255;
-        drawLine(p+FFTX, FFTY-y, p+FFTX, FFTY-y, R, G, B);
+        int t = y * 255 / lv;
+        drawLine(p+FFTX, FFTY-y, p+FFTX, FFTY-y,
+                 0, t*180>>8, 64+(t*191>>8));
         }
       }
     }
