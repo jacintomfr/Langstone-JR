@@ -8,5 +8,5 @@
 // ══════════════════════════════════════════════════════════════
 #define LANGSTONE_VER_MAJOR  2
 #define LANGSTONE_VER_BUILD  4
-#define LANGSTONE_VERSION    "V02-007"
+#define LANGSTONE_VERSION    "V02-009"
 #endif

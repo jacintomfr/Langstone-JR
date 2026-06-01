@@ -359,21 +359,11 @@ void doGitUpgrade(void)
     {
     // Extract new version from SUCCESS:Vxx-yyy
     char newver[16]=""; sscanf(lastLine,"SUCCESS:%15s",newver);
-    char msg[80]; sprintf(msg,"Upgrade OK %s - reinicio em 3s",newver);
+    char msg[80]; sprintf(msg,"Upgrade OK %s - reboot em 3s  ",newver);
     setForeColour(0,220,60); displayStr(msg);
     sleep(3);
-    // Stop GNU Radio — do NOT killall GUI_Hack (we ARE the GUI)
-    system("killall python  > /dev/null 2>&1");
-    system("killall python3 > /dev/null 2>&1");
-    // Wait for python to fully terminate (max 3s)
-    system("for i in 1 2 3 4 5 6; do pgrep -x python3 > /dev/null 2>&1 || break; sleep 0.5; done");
-    // Clean up
-    system("rm -f /tmp/langstoneTRx");
-    system("for id in $(ipcs -m | awk 'NR>3 && $6==0 {print $2}'); do ipcrm -m $id 2>/dev/null; done");
-    sleep(1);
-    // Launch new instance — nohup detaches from this process completely
-    system("nohup /bin/bash /home/pi/Langstone/run > /tmp/langstone_restart.log 2>&1 &");
-    sleep(2);  // give run time to start before we exit
+    // Reboot RPi5 — cleanest restart after upgrade
+    system("sudo reboot");
     exit(0);
     }
   else if(success == 2)
@@ -2606,7 +2596,7 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = SNAP
       {
       if(upgradeConfirm==0)
         {upgradeConfirm=1;
-         drawButtonIC7300(funcButtonsX+buttonSpaceX*4,funcButtonsY,"SURE?",BTN_WARN);
+         drawButtonIC7300(funcButtonsX+buttonSpaceX*4,funcButtonsY,"YES",BTN_WARN);
          displayError("  Touch UPGRDE again to upgrade from GitHub  ");return;}
       upgradeConfirm=0;doGitUpgrade();return;
       }
