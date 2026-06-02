@@ -1492,11 +1492,11 @@ void S_Meter(void)
       }
     }
 
-  // ── Squelch gate — histerese 3dB + hold 300ms ───────────────────
+  // ── Squelch gate — histerese 3dB + hold ~500ms ──────────────────
   // Abre:  sMeter > squelch+3  (imediato)
-  // Fecha: sMeter < squelch-3  (após 300ms contínuos)
-  // Evita chattering e corte de sílabas
-  {
+  // Fecha: sMeter < squelch-3  (após ~500ms contínuos)
+  // Loop corre a 15fps (bloqueado pelo fread FFT)
+  // 8 frames × (1/15s) ≈ 530ms — evita chattering sem atraso excessivo
   static int sqlHoldCount = 0;
   if(squelch == 0)
     {
@@ -1511,8 +1511,8 @@ void S_Meter(void)
   else if(sMeter < (float)(squelch - 3))
     {
     // Sinal abaixo threshold-histerese — conta frames antes de fechar
-    if(sqlHoldCount < 30) sqlHoldCount++;
-    if(sqlHoldCount >= 30) squelchGate = 0;
+    if(sqlHoldCount < 8) sqlHoldCount++;
+    if(sqlHoldCount >= 8) squelchGate = 0;
     }
   else
     {
@@ -1527,7 +1527,6 @@ void S_Meter(void)
     lastSquelchGate = squelchGate;
     }
   gated = (squelchGate == 0 && squelch > 0) ? 1 : 0;
-  }
 }
 
 void P_Meter(void)
