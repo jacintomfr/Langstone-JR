@@ -421,8 +421,8 @@ int sendBeacon=0;
 int dotCount=0;
 int transmitting=0;
 int dialLock=0;
-int squelchGate=0;
-int lastSquelchGate=0;
+int squelchGate=1;      // 1=open(audio on), 0=closed(muted)
+int lastSquelchGate=1;  // start open — no audio cut at startup
 
 int rxFilterLow;
 int rxFilterHigh;
@@ -475,7 +475,7 @@ int sMeterType = 0;
 int volume=20;
 #define maxvol 100
 
-int squelch=20;
+int squelch=0;
 #define maxsql 100
 
 int rit=0;
@@ -1394,32 +1394,42 @@ void S_Meter(void)
     }
  
 
-  // ── Squelch gate — histerese + hold time para estabilidade ──────
-  #define SQL_HYSTERESIS 3
-  #define SQL_HOLD_FRAMES 30  // ~300ms
+  // ── Squelch gate — histerese 3dB + hold 300ms ───────────────────
+  // Abre:  sMeter > squelch+3  (imediato)
+  // Fecha: sMeter < squelch-3  (após 300ms contínuos)
+  // Evita chattering e corte de sílabas
+  {
   static int sqlHoldCount = 0;
-
   if(squelch == 0)
     {
-    if(lastSquelchGate != 1) { setMute(0); lastSquelchGate = 1; }
-    sqlHoldCount = 0;
+    // SQL off — sempre aberto
+    sqlHoldCount = 0; squelchGate = 1;
     }
-  else if(sMeter >= (squelch + SQL_HYSTERESIS))
+  else if(sMeter >= (float)(squelch + 3))
     {
-    sqlHoldCount = 0;
-    if(lastSquelchGate != 1) { setMute(0); lastSquelchGate = 1; }
+    // Sinal acima threshold+histerese — abre imediatamente
+    sqlHoldCount = 0; squelchGate = 1;
     }
-  else if(sMeter < (squelch - SQL_HYSTERESIS))
+  else if(sMeter < (float)(squelch - 3))
     {
-    sqlHoldCount++;
-    if(sqlHoldCount >= SQL_HOLD_FRAMES && lastSquelchGate != 0)
-      { setMute(1); lastSquelchGate = 0; }
+    // Sinal abaixo threshold-histerese — conta frames antes de fechar
+    if(sqlHoldCount < 30) sqlHoldCount++;
+    if(sqlHoldCount >= 30) squelchGate = 0;
     }
   else
     {
+    // Zona histerese — mantém estado, reset hold
     sqlHoldCount = 0;
     }
-  squelchGate = lastSquelchGate;
+  // Aplica mute se estado mudou
+  if(squelchGate != lastSquelchGate)
+    {
+    char muteStr[5]; sprintf(muteStr,"U%d", squelchGate ? 0 : 1);
+    sendFifo(muteStr);
+    lastSquelchGate = squelchGate;
+    }
+  gated = (squelchGate == 0 && squelch > 0) ? 1 : 0;
+  }
 }
 
 
@@ -3067,7 +3077,7 @@ void setKey(int k)
 
 void setMute(int m)
 {
-  if(squelchGate == 0) m=1;
+  // squelchGate handled in S_Meter gate logic
   char mStr[5];
   sprintf(mStr,"U%d",m);
   sendFifo(mStr);
