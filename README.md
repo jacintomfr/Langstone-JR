@@ -23,18 +23,22 @@ More information about the original Langstone project can be found on the UK Mic
 
 ## Origin and Authorship
 
-> This repository is a **modified fork** of [Langstone V3](https://github.com/G4EML/Langstone) by Colin Durbridge G4EML, originally licensed under GPL-3.0.
+> This repository is a **personal fork** of [Langstone V3](https://github.com/G4EML/Langstone) by Colin Durbridge G4EML, originally licensed under GPL-3.0.
 
-Modifications by **Jacinto — CU2ED** include:
+The RPi5 and HackRF One support was already established in the upstream project by G4EML. This fork takes that as a starting point and applies a set of personal ideas, UI improvements and hardware additions by **Jacinto Rebelo — CU2ED** (Azores, Portugal):
 
-- Port and adaptation for **Raspberry Pi 5** hardware
-- Integration and testing with **HackRF One** as the primary SDR frontend
-- Revised GNURadio flowgraphs (`Lang_TRX_Hack.grc` / `Lang_TRX_Hack.py`)
-- Revised GUI source (`LangstoneGUI_Hack.c`) for RPi5 compatibility
-- Adapted install scripts (`installHack.sh`) for current OS and dependency versions
-- Additional hardware configurations and ALSA audio profiles
+- **Redesigned screen layout** — reorganised UI panels and controls to better suit the 7" touchscreen form factor
+- **Enhanced on-screen information** — additional data displayed in real time (frequency, mode, signal info)
+- **Waterfall and spectrum improvements** — modified colour palette, scaling and layout for better readability
+- **I²C power and SWR meter** — hardware integration of an external I²C meter for real-time TX monitoring
+- **AGC optimisation** — tuned automatic gain control parameters for improved receive dynamic range and audio consistency
+- **TX audio equalizer** — added TX equalizer stage in the GNURadio flowgraph for better microphone frequency response shaping
+- **CPU optimisation for RPi5** — processing pipeline tuned to reduce CPU load and improve responsiveness on the RPi5
+- **Snap package support** — added snap-based distribution for easier deployment
+- **Auto-update mechanism** — automatic update routine built into the run scripts
 
-All original authorship and copyright of the upstream code belongs to Colin Durbridge G4EML and contributors. Modifications in this repository are Copyright © 2024–2025 Jacinto (CU2ED).
+All original authorship and copyright of the upstream code belongs to Colin Durbridge G4EML and contributors.
+Modifications in this repository are Copyright © 2024–2025 Jacinto Rebelo — CU2ED.
 
 ---
 
