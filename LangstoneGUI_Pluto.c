@@ -250,7 +250,7 @@ enum {USB,LSB,CW,CWN,FM,AM};
 #define BTN_WARN   3
 #define BTN_AMBER  4  // amber style button
 
-char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","Rx Baseband= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Att= ","Rx Gain= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Callsign= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
+char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","Rx Baseband= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Att= ","Rx Gain= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Call ID= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
 enum {S_ZERO,FFT_REF,RX_BASE,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_ATT,RX_GAIN,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
 
 int settingNo=RX_GAIN;
@@ -4513,6 +4513,9 @@ void takeSnapshot(void)
   drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_ON);
   usleep(150000);  // 150ms — enough for LCD controller to render the button
 
+  // Create snap directory if it does not exist
+  system("mkdir -p /home/pi/Langstone/snap");
+
   // Open framebuffer
   FILE *fb = fopen("/dev/fb0", "rb");
   if(!fb)
@@ -4538,12 +4541,18 @@ void takeSnapshot(void)
   free(fbuf);
 
   // Filename: snapshot_CU2ED_HHMMSS_DDMMYYYY.png
+  // Build clean callsign — strip _ (space placeholders) from array
+  char cleanCS[12]={0};
+  for(int i=0;i<11;i++) {
+      if(callSign[i]==0 || callSign[i]==95) break;  // 95 = '_'
+      cleanCS[i]=callSign[i];
+  }
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
   char fname[128];
   snprintf(fname, sizeof(fname),
            "/home/pi/Langstone/snap/snapshot_%s_%02d%02d%02d_%02d%02d%04d.png",
-           callSign,
+           cleanCS,
            t->tm_hour, t->tm_min, t->tm_sec,
            t->tm_mday, t->tm_mon+1, t->tm_year+1900);
 
@@ -4602,18 +4611,14 @@ void takeSnapshot(void)
   #undef PCRC
   #undef PU32
 
-  // ── Show filename on status line (between waterfall and settings) ─
+  // ── Show filename on status line ─────────────────────────────────
   {
-  // Extract just the filename without path
   char *fn = strrchr(fname, '/');
   fn = fn ? fn+1 : fname;
-  // Clear the ENTIRE zone between waterfall bottom and settings line
-  // textSize=2 at settingY=390 has pixels reaching up to ~settingY-14
-  // Clear from settingY-26 to settingY-1 (26px strip, fully black)
-  for(int cy = settingY-29; cy < settingY; cy++)
+  // Clear wider area to cover any residual SET menu text
+  for(int cy = settingY-40; cy < settingY+24; cy++)
     drawLine(0, cy, 799, cy, 0,0,0);
-  // Show filename centred vertically in the strip — Y = settingY-18
-  gotoXY(0, settingY-18);
+  gotoXY(0, settingY-10);
   setForeColour(255,220,0);
   textSize=1;
   char snapMsg[140];
@@ -4887,12 +4892,18 @@ if(se==BANDS24)
   if(se==CALLSIGN)
   {
   maxSetIndex = 10;
+  // Clear BOTH pixel rows — textSize=2 chars are ~16px tall, span settingY and settingY+8
+  setForeColour(0,0,0);  // black
+  for(int _cy = settingY-2; _cy < settingY+20; _cy++)
+    drawLine(0, _cy, 799, _cy, 0, 0, 0);
+  setForeColour(255,255,255);
+  gotoXY(0, settingY);
+  displayStr(settingText[CALLSIGN]);
   for(int c=0; c<11; c++)
     {
     if(setIndex==c) setForeColour(0,255,0);
     else            setForeColour(255,255,255);
     char ch = callSign[c];
-    // _ (95) = space placeholder: show ' ' always except cursor pos shows '_'
     if(ch == 95)
       { if(setIndex == c) displayChar('_'); else displayChar(' '); }
     else if(ch >= 47)
@@ -4901,7 +4912,6 @@ if(se==BANDS24)
       displayChar(' ');
     }
   setForeColour(255,255,255);
-  // Update live display
   static char lastCS[12]="";
   if(strcmp(callSign,lastCS)!=0) { strncpy(lastCS,callSign,11); drawCallsignDisplay(); }
   }
