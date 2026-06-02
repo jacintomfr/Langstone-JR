@@ -250,7 +250,7 @@ enum {USB,LSB,CW,CWN,FM,AM};
 #define BTN_WARN   3
 #define BTN_AMBER  4  // amber style button
 
-char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Att= ","Rx Gain= ","Rx Baseband= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Call ID= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
+char * settingText[numSettings]={"S-METER ZERO= ","FFT REF= ","WF LEVEL= ","AGC ADJ= ","SPEC STRETCH= ","SSB RX FILTER HIGH= ","SSB RX FILTER LOW= ","SSB GAIN EQ-H= ","SSB GAIN EQ-M2= ","SSB GAIN EQ-M1= ","SSB GAIN EQ-L= ","SSB MIC GAIN= ","FM MIC GAIN= ","AM MIC GAIN= ","TX ATT= ","RX GAIN= ","RX BASEBAND= "," RX OFFSET= ","RX HARMONIC MIXING= "," TX OFFSET= ","TX HARMONIC MIXING= ","REPEATER SHIFT= ","CTCSS= ","BAND BITS (RX)= ","BAND BITS (TX)= ","24 BANDS= ","CW IDENT= ","CALL ID= ","CWID CARRIER= ","CW BREAK-IN HANG TIME= ","ROTATE SCREEN = "};
 enum {S_ZERO,FFT_REF,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_ATT,RX_GAIN,RX_BASE,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
 
 int settingNo=RX_GAIN;
