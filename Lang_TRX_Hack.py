@@ -489,6 +489,7 @@ class Lang_TRX_Hack(gr.top_block):
 
     def set_Rx_Gain(self, Rx_Gain):
         self.Rx_Gain = Rx_Gain
+        self.soapy_hackrf_source_0.set_gain(0, 'LNA', min(max(Rx_Gain, 0.0), 40.0))
 
     def set_AGC_Freeze(self, freeze):
         # Disabled — noise gate caused audio dropout on filter/AGC adjustments
