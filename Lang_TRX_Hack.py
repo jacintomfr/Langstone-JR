@@ -302,6 +302,8 @@ class Lang_TRX_Hack(gr.top_block):
         self.analog_const_source_x_0 = analog.sig_source_f(0, analog.GR_CONST_WAVE, 0, 0, 0)
         self.analog_agc2_xx_0 = analog.agc2_ff(0.1, 0.00002, (3e-1), 1.0)
         self.analog_agc2_xx_0.set_max_gain(200)   # ~46dB range (was 20=26dB — insufficient for weak signals)
+        self._agc_lock        = __import__('threading').Lock()  # serialises all set_decay_rate calls
+        self._agc_hold_active = False   # True while agc_hold() is sleeping — hang loop yields
         # Power probe for noise gate — measures AGC output level
         self.blocks_probe_signal_f_0 = blocks.probe_signal_f()
 
@@ -494,24 +496,34 @@ class Lang_TRX_Hack(gr.top_block):
         self.soapy_hackrf_source_0.set_gain(0, 'LNA', min(max(Rx_Gain, 0.0), 40.0))
 
     def set_AGC_Freeze(self, freeze):
-        # Disabled — noise gate caused audio dropout on filter/AGC adjustments
-        pass
+        # Called by noise gate — routed through central AGC lock
+        if getattr(self, '_agc_hold_active', False):
+            return   # agc_hold has priority — don't interfere
+        with self._agc_lock:
+            if freeze:
+                self.analog_agc2_xx_0.set_decay_rate(0.000001)
+            else:
+                self.analog_agc2_xx_0.set_decay_rate(
+                    getattr(self, '_agc_normal_decay', 0.00002))
 
     def agc_hold(self, duration_ms=200):
-        # Freeze AGC gain during filter/setting changes to prevent dropout
-        # Saves current gain, sets decay=0 for duration_ms, then restores
+        # Freeze AGC during filter retap — sets _agc_hold_active so hang loop
+        # yields for the full duration (lock alone can't protect a time window)
         import threading, time
-        current_gain  = self.analog_agc2_xx_0.get_gain()
-        normal_decay  = getattr(self, '_agc_normal_decay', 0.00002)
+        current_gain = self.analog_agc2_xx_0.get_gain()
         def _hold():
-            # Freeze: set decay near-zero so gain doesn't change during transient
-            self.analog_agc2_xx_0.set_decay_rate(0.000001)
-            self.analog_agc2_xx_0.set_attack_rate(0.000001)
-            self.analog_agc2_xx_0.set_gain(current_gain)
+            self._agc_hold_active = True
+            with self._agc_lock:
+                self.analog_agc2_xx_0.set_attack_rate(0.000001)
+                self.analog_agc2_xx_0.set_decay_rate(0.000001)
+                self.analog_agc2_xx_0.set_gain(current_gain)
             time.sleep(duration_ms / 1000.0)
-            # Restore normal AGC behaviour
-            self.analog_agc2_xx_0.set_attack_rate(getattr(self, '_agc_normal_attack', 0.1))
-            self.analog_agc2_xx_0.set_decay_rate(normal_decay)
+            with self._agc_lock:
+                self.analog_agc2_xx_0.set_attack_rate(
+                    getattr(self, '_agc_normal_attack', 0.1))
+                self.analog_agc2_xx_0.set_decay_rate(
+                    getattr(self, '_agc_normal_decay', 0.00002))
+            self._agc_hold_active = False
         threading.Thread(target=_hold, daemon=True).start()
 
     def set_AGC_Level(self, level_db):
@@ -537,78 +549,119 @@ class Lang_TRX_Hack(gr.top_block):
     def set_AGC_Params(self, attack, decay, hang_time=0.0):
         # AGC2 mode control (J command)
         # agc2_ff uses LOOP GAIN semantics (not 1/τ like agc3_cc)
-        # hang_time: default for this mode — but user's h<n> setting takes priority
-        # Exception: AGC OFF always forces hang=0 (unity gain, no loop active)
         if attack == 0 and decay == 0:
-            # OFF: unity gain — AGC loop frozen at gain=1.0, no amplitude change
-            # Audio level controlled by hardware LNA gain + AFGain volume only
-            self._agc_hang_time   = 0.0   # OFF always disables hang
+            # OFF: unity gain
+            self._agc_mode_on     = False
+            self._agc_hang_time   = 0.0
             self.analog_agc2_xx_0.set_max_gain(1.0)
             self.analog_agc2_xx_0.set_gain(1.0)
             self.analog_agc2_xx_0.set_reference(1.0)
         else:
-            self._agc_normal_attack = attack  # stored for agc_hold restore
+            self._agc_mode_on       = True
+            self._agc_normal_attack = attack
             self._agc_normal_decay  = decay
-            # Preserve user's hang setting if already set via h<n> command
-            # Only apply mode default on first use (no user override yet)
-            if not hasattr(self, '_agc_hang_user_set'):
+            # Only apply mode default hang if user has NOT set their own value via h<n>
+            if not getattr(self, '_agc_hang_user_set', False):
                 self._agc_hang_time = hang_time
-            # else: user has explicitly set hang via h<n> — keep their value
-            self.analog_agc2_xx_0.set_max_gain(200)   # ~46dB range
+            self.analog_agc2_xx_0.set_max_gain(200)
             self.analog_agc2_xx_0.set_reference(getattr(self, '_current_agc_ref', 0.3))
             self.analog_agc2_xx_0.set_attack_rate(attack)
-            self.analog_agc2_xx_0.set_decay_rate(decay)
+            with self._agc_lock:
+                self.analog_agc2_xx_0.set_decay_rate(decay)
 
     def start_agc_hang_thread(self):
-        # AGC hang thread — runs for the lifetime of the flowgraph
-        # Monitors probe_signal_f output level at 50Hz
-        # When signal drops: holds gain for _agc_hang_time seconds before allowing decay
-        # This prevents audible noise bursts between words/syllables (classic TRX behaviour)
+        # AGC hang thread — runs for lifetime of flowgraph
+        #
+        # DESIGN:
+        # probe_signal_f is connected BEFORE agc2 (raw demodulated audio)
+        # Level varies with signal strength — we use RELATIVE detection, not absolute:
+        #   → measure a short-term peak and compare to a longer-term average
+        #   → signal present:  short_peak >> long_avg  (ratio > threshold_ratio)
+        #   → signal absent:   short_peak ≈ long_avg   (ratio ≤ threshold_ratio)
+        # This is self-calibrating — works regardless of absolute level
+        # threshold_ratio set by user via 'e<n>' command (AGC THRESHOLD= in SET menu)
+        #
+        # hang_time set by user via 'h<n>' command (AGC HANG TIME= in SET menu)
+        # Both are live-adjustable — no restart needed
         import threading, time
-        self._agc_hang_running = True
-        self._agc_hang_time    = getattr(self, '_agc_hang_time', 0.5)
+        self._agc_hang_running  = True
 
         def _hang_loop():
-            POLL      = 0.02        # 50Hz poll — low CPU overhead
-            # threshold read dynamically from _agc_hang_threshold (set via K command)
-            in_hang   = False
-            hang_end  = 0.0
+            POLL          = 0.02     # 50Hz
+            short_avg     = 0.0      # fast follower  (~100ms)
+            long_avg      = 0.0      # slow follower  (~2s)
+            ALPHA_SHORT   = 0.20     # τ ≈ POLL/ln(1/(1-α)) ≈ 87ms
+            ALPHA_LONG    = 0.01     # τ ≈ POLL/ln(1/(1-α)) ≈ 2.0s
+            in_hang       = False
+            hang_end      = 0.0
 
             while self._agc_hang_running:
                 time.sleep(POLL)
                 try:
-                    hang_time = getattr(self, '_agc_hang_time', 0.0)
-                    if hang_time <= 0.0:
-                        # Hang disabled for this mode (OFF or FAST) — restore decay and skip
+                    # Yield while agc_hold() is active — don't fight filter retap
+                    if getattr(self, '_agc_hold_active', False):
+                        in_hang = False   # reset state — hold takes over
+                        continue
+
+                    # AGC OFF — hang disabled, nothing to do
+                    if not getattr(self, '_agc_mode_on', True):
                         if in_hang:
-                            self.analog_agc2_xx_0.set_decay_rate(
-                                getattr(self, '_agc_normal_decay', 0.00002))
+                            with self._agc_lock:
+                                self.analog_agc2_xx_0.set_decay_rate(
+                                    getattr(self, '_agc_normal_decay', 0.00002))
                             in_hang = False
                         continue
 
-                    level = abs(self.blocks_probe_signal_f_0.level())
-                    now   = time.time()
-
-                    threshold = getattr(self, '_agc_hang_threshold', 0.05)
-                    if level > threshold:
-                        # Signal present — cancel any active hang, let AGC run normally
+                    hang_time = getattr(self, '_agc_hang_time', 0.0)
+                    if hang_time <= 0.0:
                         if in_hang:
-                            self.analog_agc2_xx_0.set_decay_rate(
-                                getattr(self, '_agc_normal_decay', 0.00002))
+                            with self._agc_lock:
+                                self.analog_agc2_xx_0.set_decay_rate(
+                                    getattr(self, '_agc_normal_decay', 0.00002))
                             in_hang = False
-                        hang_end = now + hang_time   # reset hang timer
+                        continue
+
+                    # Raw level before AGC — self-calibrating relative detection
+                    raw = abs(self.blocks_probe_signal_f_0.level())
+
+                    # Update running averages
+                    short_avg = short_avg + ALPHA_SHORT * (raw - short_avg)
+                    long_avg  = long_avg  + ALPHA_LONG  * (raw - long_avg)
+
+                    # threshold_ratio from SET menu: e1=1.5, e5=2.5 (default), e10=5.0
+                    # ratio = agcThreshScale mapped to 1.0 + scale*0.3
+                    thresh_scale  = getattr(self, '_agc_hang_threshold', 0.05)
+                    # reinterpret as ratio: e5(=0.05) → ratio 2.5, e1(=0.01) → 1.3, e10(=0.10) → 4.0
+                    ratio_thresh  = 1.0 + thresh_scale * 30.0
+
+                    # Avoid division by zero
+                    if long_avg < 1e-9:
+                        long_avg = 1e-9
+
+                    now = time.time()
+
+                    if (short_avg / long_avg) > ratio_thresh:
+                        # Signal present — reset hang timer, restore decay if frozen
+                        if in_hang:
+                            with self._agc_lock:
+                                self.analog_agc2_xx_0.set_decay_rate(
+                                    getattr(self, '_agc_normal_decay', 0.00002))
+                            in_hang = False
+                        hang_end = now + hang_time
 
                     elif now < hang_end:
-                        # Signal gone but within hang window — freeze decay
+                        # Signal gone, within hang window — freeze decay
                         if not in_hang:
-                            self.analog_agc2_xx_0.set_decay_rate(0.000001)
+                            with self._agc_lock:
+                                self.analog_agc2_xx_0.set_decay_rate(0.000001)
                             in_hang = True
 
                     else:
                         # Hang expired — restore normal decay
                         if in_hang:
-                            self.analog_agc2_xx_0.set_decay_rate(
-                                getattr(self, '_agc_normal_decay', 0.00002))
+                            with self._agc_lock:
+                                self.analog_agc2_xx_0.set_decay_rate(
+                                    getattr(self, '_agc_normal_decay', 0.00002))
                             in_hang = False
 
                 except Exception:
