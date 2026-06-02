@@ -219,14 +219,25 @@ ls -dt "$INSTALL_DIR"/backup_* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/nu
 ok "7/7 Concluido"
 sleep 0.2
 
-# Update version.h to reflect the remote version that was installed
-# The build script will have incremented it — reset to remote base version
-REMOTE_MAJOR=$(echo "$REMOTE_VER" | grep -o 'V[0-9]*' | grep -o '[0-9]*')
-REMOTE_BUILD=$(echo "$REMOTE_VER" | grep -o '[0-9]*$')
-sed -i "s/LANGSTONE_VER_MAJOR  [0-9]*/LANGSTONE_VER_MAJOR  $REMOTE_MAJOR/" "$VER_FILE"
-sed -i "s/LANGSTONE_VER_BUILD  [0-9]*/LANGSTONE_VER_BUILD  $REMOTE_BUILD/" "$VER_FILE"
-sed -i "s/LANGSTONE_VERSION    "V[0-9]*-[0-9]*"/LANGSTONE_VERSION    "$REMOTE_VER"/" "$VER_FILE"
-log "version.h updated to $REMOTE_VER"
+# Rewrite version.h completely — more reliable than sed with version strings
+REMOTE_MAJOR_N=$(echo "$REMOTE_VER" | sed 's/V0*//;s/-.*//')
+REMOTE_BUILD_N=$(echo "$REMOTE_VER" | grep -o '[0-9]*$' | sed 's/^0*//')
+[ -z "$REMOTE_BUILD_N" ] && REMOTE_BUILD_N=0
+cat > "$VER_FILE" << VEOF
+#ifndef LANGSTONE_VERSION_H
+#define LANGSTONE_VERSION_H
+#define LANGSTONE_VER_MAJOR  $REMOTE_MAJOR_N
+#define LANGSTONE_VER_BUILD  $REMOTE_BUILD_N
+#define LANGSTONE_VERSION    "$REMOTE_VER"
+#endif
+VEOF
+# Verify write succeeded
+WRITTEN=$(grep 'LANGSTONE_VERSION' "$VER_FILE" 2>/dev/null | grep -o '"V[^"]*"' | tr -d '"')
+log "version.h rewritten: expected=$REMOTE_VER written=$WRITTEN"
+if [ "$WRITTEN" != "$REMOTE_VER" ]; then
+    err "version.h write failed: got '$WRITTEN' expected '$REMOTE_VER'"
+    exit 1
+fi
 
 echo "SUCCESS:$REMOTE_VER" > "$PROGRESS"
 log "Upgrade completo: $LOCAL_VER -> $REMOTE_VER"
