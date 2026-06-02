@@ -24,6 +24,8 @@ if !(ps -ax |grep -v grep| grep -q Lang_TRX_Hack.py) then
    #check that the GNU module started corretly
 
    if (ps -ax | grep -v grep| grep -q Lang_TRX_Hack.py) then
+      # Limpa fb0 a preto antes do GUI arrancar — evita flash do terminal
+      dd if=/dev/zero bs=1536000 count=1 > /dev/fb0 2>/dev/null
       # If it did then start the GUI
       /home/pi/Langstone/GUI_Hack > /tmp/LangstoneGUI_Hack.log 2>&1
    else
