@@ -310,7 +310,10 @@ class Lang_TRX_Hack(gr.top_block):
         # Connections
         ##################################################
         self.connect((self.analog_agc2_xx_0, 0), (self.blocks_multiply_const_vxx_2_1_0, 0))
-        self.connect((self.analog_agc2_xx_0, 0), (self.blocks_probe_signal_f_0, 0))
+        # probe_signal_f connected BEFORE agc2 — measures raw demodulated audio amplitude
+        # BEFORE normalisation. Speech: ~0.1..0.5. Silence/noise: ~0.001..0.01
+        # threshold=0.05 (SET menu AGC THRESHOLD) now has real physical meaning
+        self.connect((self.blocks_add_xx_1_0, 0), (self.blocks_probe_signal_f_0, 0))
         self.connect((self.analog_const_source_x_0, 0), (self.blocks_float_to_complex_0_0, 1))
         self.connect((self.analog_nbfm_rx_0, 0), (self.blocks_multiply_const_vxx_2_0, 0))
         self.connect((self.analog_nbfm_tx_0, 0), (self.blocks_multiply_const_vxx_3, 0))
