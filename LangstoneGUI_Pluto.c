@@ -2914,6 +2914,13 @@ if(inputMode==SETTINGS)
   // Clear snap message strip above settings line
   for(int cy = settingY-29; cy < settingY; cy++)
     drawLine(0, cy, 799, cy, 0,0,0);
+  // Clear displayError area — UPGRDE confirm msg residual
+  gotoXY(0, errorY);
+  textSize=2;
+  displayStr("                                                ");
+  gotoXY(0, errorY+8);
+  displayStr("                                                ");
+  upgradeConfirm = 0;  // reset two-touch safety
   writeConfig();
   displayMenu();
   }
