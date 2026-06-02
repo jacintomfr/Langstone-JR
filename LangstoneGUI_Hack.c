@@ -2902,7 +2902,9 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = SNAP
         {
         upgradeConfirm = 1;
         drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "YES", BTN_WARN);
-        displayError("  Touch UPGRDE again to upgrade from GitHub  ");
+        // Show at settingY — not errorY (inside waterfall)
+        gotoXY(0, settingY); textSize=2; setForeColour(255,50,50);
+        displayStr("Touch UPGRDE again to confirm    ");
         return;
         }
       upgradeConfirm = 0;

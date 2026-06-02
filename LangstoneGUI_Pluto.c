@@ -2600,7 +2600,8 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = SNAP
       if(upgradeConfirm==0)
         {upgradeConfirm=1;
          drawButtonIC7300(funcButtonsX+buttonSpaceX*4,funcButtonsY,"YES",BTN_WARN);
-         displayError("  Touch UPGRDE again to upgrade from GitHub  ");return;}
+         gotoXY(0,settingY); textSize=2; setForeColour(255,50,50);
+         displayStr("Touch UPGRDE again to confirm    ");return;}
       upgradeConfirm=0;doGitUpgrade();return;
       }
     else
@@ -2914,12 +2915,6 @@ if(inputMode==SETTINGS)
   // Clear snap message strip above settings line
   for(int cy = settingY-29; cy < settingY; cy++)
     drawLine(0, cy, 799, cy, 0,0,0);
-  // Clear displayError area — UPGRDE confirm msg residual
-  gotoXY(0, errorY);
-  textSize=2;
-  displayStr("                                                ");
-  gotoXY(0, errorY+8);
-  displayStr("                                                ");
   upgradeConfirm = 0;  // reset two-touch safety
   writeConfig();
   displayMenu();
