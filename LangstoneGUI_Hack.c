@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 //  Langstone V3H — HackRF GUI  (LangstoneGUI_Hack.c)
 //  Hardware: HackRF One, RPi5, LCD 800×480 táctil, GNU Radio 3.10
-//  Build: cc LangstoneGUI_Hack.c -o GUI_HackRF -llgpio -lz -lm
+//  Build: cc LangstoneGUI_Hack.c -o GUI_HackRF -llgpio -lz -lm -lpthread
 // ══════════════════════════════════════════════════════════════════════════════
 //
 //  ── SPECTRUM STRETCH ────────────────────────────────────────────────────────
@@ -82,6 +82,24 @@
 #include <netdb.h>
 #include <netinet/in.h>                                                                                                      
 #include <arpa/inet.h>
+#include <linux/i2c-dev.h>
+#include <sys/ioctl.h>
+#include <pthread.h>
+
+// ── PWR/SWR display — ADS1115 via I²C ───────────────────────────────────────
+// ADS1115: 16-bit ADC, I²C address 0x48 (ADDR pin → GND)
+// Ch0 (AIN0-GND): forward voltage  from RF detector
+// Ch1 (AIN1-GND): reflected voltage from RF detector
+// PWR  = (Vfwd²) × PWR_CAL_K    — calibrate empirically with reference wattmeter
+// SWR  = (Vfwd + Vref) / (Vfwd - Vref)
+// I²C raw ioctl — no external libs required
+#define ADS1115_ADDR    0x48
+#define ADS1115_I2C_DEV "/dev/i2c-1"
+#define PWR_CAL_K       50.0f    // W/V² — calibrate on real hardware
+#define SWR_ALERT       3.0f     // SWR threshold for red colour
+#define PWR_X           650      // PWR/SWR display X position
+#define PWR_Y           55       // centred between callsign (Y≈38) and RIT 0.00 (Y≈118)
+#define SWR_Y           83       // PWR_Y + 24px (textSize=2) + 4px gap
 
 void setFreq(double fr);
 void displayFreq(double fr);
@@ -176,6 +194,12 @@ void doUpgrade(char* script);
 void setAGC(int mode);
 void doGitUpgrade(void);
 void drawCallsignDisplay(void);
+void drawPwrSwr(void);
+void initADS1115(void);
+// PWR/SWR globals — written by ADC thread, read by drawPwrSwr()
+static volatile float g_pwr_watts = -1.0f;
+static volatile float g_swr       = -1.0f;
+static volatile int   g_ads_fd    = -1;
 int firstpass=1;
 double freq;
 double freqInc=0.001;
@@ -400,10 +424,10 @@ int bandAGCAdj[numband]={0};     // AGC level adjust per band
 #define AGCAdj bandAGCAdj[band]
 int AGCAdjByMode[6] = {0,0,0,0,0,0};  // AGC level memory per mode (USB,LSB,CW,CWN,FM,AM)
 // AGC hang and threshold — user calibration via SET menu
-// agcHangScale: 0-20, maps to 0.0-2.0s (×0.1). Default=5 → 0.5s
-// agcThreshScale: 1-20, maps to threshold 0.01-0.20 (×0.01). Default=5 → 0.05
-int agcHangScale  = 5;   // SET menu: AGC HANG TIME=
-int agcThreshScale= 5;   // SET menu: AGC THRESHOLD=
+// agcHangScale: 0-20 → 0.0-2.0s (×0.1). Default=5 → 0.5s. h<n> FIFO command.
+// agcThreshScale: 1-20 → 0.01-0.20 (×0.01). Default=5 → 0.05. e<n> FIFO command.
+int agcHangScale   = 5;
+int agcThreshScale = 5;
 float wf_low_smooth = -999.0f; // IIR smoothed noise floor for auto waterfall (-999=uninitialised)
 int smNeedsFullRedraw = 0;     // set by P_Meter on last TX frame to force S_Meter full redraw
 int pmNeedsReset = 0;          // set on TX start to reset P_Meter statics
@@ -545,6 +569,7 @@ int main(int argc, char* argv[])
     waterfall();
     StatusPanel();                                    //status panel — independent of S-Meter, low overhead
     drawCallsignDisplay();
+    drawPwrSwr();
 
     if(configCounter>0)                                       //save the config after 5 seconds of inactivity.
     {
@@ -1187,24 +1212,125 @@ static inline void smDrawTriangle(int sqx, int visible)
 
 void drawCallsignDisplay(void)
 {
-  // Display operator callsign top-right in textSize=2
-  // Only show chars up to first _ (space placeholder) — no _ in display
   static char lastDisplayed[12] = "";
-  if(strcmp(callSign, lastDisplayed) == 0) return;  // only redraw on change
+  if(strcmp(callSign, lastDisplayed) == 0) return;
   strncpy(lastDisplayed, callSign, 11);
-  // Build clean string: stop at first _ or null
-  char clean[12] = "           ";  // 11 spaces to clear old chars
+  char clean[12] = "           ";
   int len = 0;
   for(int i=0; i<11 && callSign[i] != 0; i++)
     {
-    if(callSign[i] == 95) break;  // stop at _ (space placeholder)
+    if(callSign[i] == 95) break;
     clean[i] = callSign[i];
     len = i+1;
     }
   gotoXY(670,14);
   setForeColour(255,220,0);
   textSize=2;
-  displayStr(clean);            // always 11 chars to clear leftovers
+  displayStr(clean);
+  textSize=1;
+}
+
+// ── ADS1115 single-ended channel read via I²C raw ioctl ──────────────────────
+static float ads1115_read_channel(int fd, int ch)
+{
+  uint16_t mux = (ch == 0) ? 0x4000 : 0x5000;
+  uint16_t cfg = 0x8000 | mux | 0x0200 | 0x0100 | 0x0080;
+  uint8_t buf[3];
+  buf[0]=0x01; buf[1]=(cfg>>8)&0xFF; buf[2]=cfg&0xFF;
+  if(write(fd,buf,3)!=3) return -1.0f;
+  usleep(12000);
+  buf[0]=0x00;
+  if(write(fd,buf,1)!=1) return -1.0f;
+  if(read(fd,buf,2)!=2)  return -1.0f;
+  int16_t raw=(int16_t)((buf[0]<<8)|buf[1]);
+  if(raw<0) raw=0;
+  return (float)raw * 0.000125f;  // PGA=±4.096V → LSB=0.125mV
+}
+
+void initADS1115(void)
+{
+  g_ads_fd = open(ADS1115_I2C_DEV, O_RDWR);
+  if(g_ads_fd < 0) { g_ads_fd=-1; return; }
+  if(ioctl(g_ads_fd, I2C_SLAVE, ADS1115_ADDR) < 0)
+    { close(g_ads_fd); g_ads_fd=-1; }
+}
+
+static void *adcThread(void *arg)
+{
+  (void)arg;
+  while(1)
+    {
+    if(!transmitting || g_ads_fd < 0) { usleep(50000); continue; }
+    float vfwd = ads1115_read_channel(g_ads_fd, 0);
+    float vref = ads1115_read_channel(g_ads_fd, 1);
+    if(vfwd < 0.0f) vfwd=0.0f;
+    if(vref < 0.0f) vref=0.0f;
+    if(vref > vfwd)  vref=vfwd;
+    g_pwr_watts = vfwd * vfwd * PWR_CAL_K;
+    if(vfwd > 0.010f)
+      {
+      float d = vfwd - vref;
+      if(d < 0.001f) d=0.001f;
+      g_swr = (vfwd + vref) / d;
+      if(g_swr > 99.9f) g_swr=99.9f;
+      }
+    else g_swr=-1.0f;
+    usleep(100000);  // 10Hz in TX
+    }
+  return NULL;
+}
+
+void drawPwrSwr(void)
+{
+  static int   lastTx  = -1;
+  static float lastPwr = -999.0f;
+  static float lastSwr = -999.0f;
+  int needRedraw = 0;
+  if(transmitting != lastTx) { lastTx=transmitting; needRedraw=1; }
+
+  if(!transmitting)
+    {
+    if(!needRedraw) return;
+    textSize=2;
+    gotoXY(PWR_X, PWR_Y); setForeColour(120,120,120); displayStr("PWR:---   ");
+    gotoXY(PWR_X, SWR_Y); setForeColour(120,120,120); displayStr("SWR:---   ");
+    textSize=1;
+    lastPwr=-999.0f; lastSwr=-999.0f;
+    return;
+    }
+
+  float pwr=g_pwr_watts, swr=g_swr;
+  if(!needRedraw && fabsf(pwr-lastPwr)<0.5f && fabsf(swr-lastSwr)<0.02f) return;
+  lastPwr=pwr; lastSwr=swr;
+
+  char buf[20];
+  textSize=2;
+
+  gotoXY(PWR_X, PWR_Y);
+  if(g_ads_fd < 0)
+    { setForeColour(180,0,0); displayStr("PWR:n/a   "); }
+  else
+    {
+    setForeColour(0,220,0);
+    if(pwr >= 100.0f)      sprintf(buf,"PWR:%3.0fW  ",pwr);
+    else if(pwr >= 10.0f)  sprintf(buf,"PWR:%4.1fW ",pwr);
+    else                   sprintf(buf,"PWR:%4.2fW",pwr);
+    displayStr(buf);
+    }
+
+  gotoXY(PWR_X, SWR_Y);
+  if(g_ads_fd < 0)
+    { setForeColour(180,0,0); displayStr("SWR:n/a   "); }
+  else if(swr < 0.0f)
+    { setForeColour(120,120,120); displayStr("SWR:---   "); }
+  else
+    {
+    if     (swr < 2.0f)      setForeColour(0,220,0);
+    else if(swr < SWR_ALERT) setForeColour(255,200,0);
+    else                     setForeColour(255,0,0);
+    sprintf(buf,"SWR:%4.2f  ",swr);
+    displayStr(buf);
+    }
   textSize=1;
 }
 
@@ -2449,9 +2575,12 @@ void initSDR(void)
   char agcStr[4];
   sprintf(agcStr, "J%d", agcMode);
   sendFifo(agcStr);
-  // Restore AGC hang and threshold to Python
+  // Restore AGC hang and threshold to Python flowgraph
   { char hs[8]; sprintf(hs,"h%d",agcHangScale);  sendFifo(hs); }
   { char ts[8]; sprintf(ts,"e%d",agcThreshScale); sendFifo(ts); }
+  // Init ADS1115 I²C ADC for PWR/SWR
+  initADS1115();
+  { pthread_t _at; pthread_create(&_at,NULL,adcThread,NULL); pthread_detach(_at); }
 }
 
 void displayMenu()
@@ -4509,22 +4638,22 @@ if(settingNo==BAND_BITS_TX)        // Band Bits Tx
       displaySetting(settingNo);
       }
 
-  if(settingNo==AGC_HANG)     // AGC hang time scale 0-20 → 0.0-2.0s
+  if(settingNo==AGC_HANG)
       {
-      agcHangScale = agcHangScale + mouseScroll;
+      agcHangScale=agcHangScale+mouseScroll;
       mouseScroll=0;
-      if(agcHangScale <  0) agcHangScale =  0;
-      if(agcHangScale > 20) agcHangScale = 20;
+      if(agcHangScale <  0) agcHangScale= 0;
+      if(agcHangScale > 20) agcHangScale=20;
       { char hs[8]; sprintf(hs,"h%d",agcHangScale); sendFifo(hs); }
       displaySetting(settingNo);
       }
 
-  if(settingNo==AGC_THRESH)   // AGC threshold scale 1-20 → 0.01-0.20
+  if(settingNo==AGC_THRESH)
       {
-      agcThreshScale = agcThreshScale + mouseScroll;
+      agcThreshScale=agcThreshScale+mouseScroll;
       mouseScroll=0;
-      if(agcThreshScale <  1) agcThreshScale =  1;
-      if(agcThreshScale > 20) agcThreshScale = 20;
+      if(agcThreshScale <  1) agcThreshScale= 1;
+      if(agcThreshScale > 20) agcThreshScale=20;
       { char ts[8]; sprintf(ts,"e%d",agcThreshScale); sendFifo(ts); }
       displaySetting(settingNo);
       }
@@ -4905,16 +5034,12 @@ if(se==BAND_BITS_TX)
   }
   if(se==AGC_HANG)
   {
-  float hang_s = agcHangScale * 0.1f;
-  if(agcHangScale == 0)
-    displayStr("0 (OFF)");
-  else
-    { sprintf(valStr,"%.1f s",hang_s); displayStr(valStr); }
+  if(agcHangScale==0) displayStr("OFF");
+  else { sprintf(valStr,"%.1f s",(float)agcHangScale*0.1f); displayStr(valStr); }
   }
   if(se==AGC_THRESH)
   {
-  float thr = agcThreshScale * 0.01f;
-  sprintf(valStr,"%.2f",thr);
+  sprintf(valStr,"%.2f",(float)agcThreshScale*0.01f);
   displayStr(valStr);
   }
   if(se==TX_GAIN)
