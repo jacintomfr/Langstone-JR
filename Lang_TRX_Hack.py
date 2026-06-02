@@ -16,16 +16,15 @@
 #
 #  To edit AGC mode parameters: search for "params = [" around line 699
 #
-#  Mode   attack   decay    τ_attack   τ_decay   Best for
-#  ─────────────────────────────────────────────────────────
-#  OFF    bypass   bypass   —          —          No AGC
-#  FAST   0.2      0.01     0.1 ms     2 ms       CW, strong signals
-#  MED    0.1      0.002    0.2 ms     10 ms      SSB fast QSO
-#  SLOW   0.05     0.001    0.4 ms     21 ms      SSB normal
-#  LONG   0.02     0.0002   1.0 ms     104 ms     SSB DX, slow fading
+#  Mode   attack   decay      τ_attack   τ_decay   hang    Best for
+#  ──────────────────────────────────────────────────────────────────
+#  OFF    bypass   bypass     —          —         0s      No AGC
+#  FAST   0.10     0.0002     0.2 ms     ~100ms    0s      CW, strong signals
+#  MED    0.05     0.00005    0.4 ms     ~420ms    0.2s    SSB fast QSO
+#  SLOW   0.02     0.00002    1.0 ms     ~1.0s     0.5s    SSB normal DX
+#  LONG   0.01     0.000005   2.1 ms     ~4.2s     1.5s    Slow fading, AM
 #
-#  NOTE: agc2_ff max_gain=20 (26dB). Prevents saturation on noise/silence.
-#        For more gain range increase max_gain (e.g. 50 = 34dB).
+#  NOTE: agc2_ff max_gain=200 (~46dB range). Was 20 (26dB) — insufficient for weak signals.
 #
 # ──────────────────────────────────────────────────────────────────────────────
 #  AGC LEVEL — SET menu "AGC Adj=" scrolls -20dB to +20dB
@@ -302,7 +301,7 @@ class Lang_TRX_Hack(gr.top_block):
           )
         self.analog_const_source_x_0 = analog.sig_source_f(0, analog.GR_CONST_WAVE, 0, 0, 0)
         self.analog_agc2_xx_0 = analog.agc2_ff(0.1, 0.00002, (3e-1), 1.0)
-        self.analog_agc2_xx_0.set_max_gain(20)
+        self.analog_agc2_xx_0.set_max_gain(200)   # ~46dB range (was 20=26dB — insufficient for weak signals)
         # Power probe for noise gate — measures AGC output level
         self.blocks_probe_signal_f_0 = blocks.probe_signal_f()
 
@@ -516,6 +515,7 @@ class Lang_TRX_Hack(gr.top_block):
         # AGC level: ramp reference gradually to avoid gain jump transient
         # agc2_ff set_reference() works but causes glitch if stepped directly
         # Solution: ramp in 20 steps of 5ms each = 100ms total transition
+        # NOTE: only ramp set_reference() — set_gain() during ramp causes loop instability
         if level_db < -20: level_db = -20
         if level_db >  20: level_db =  20
         self._agc_level_db = level_db
@@ -527,28 +527,94 @@ class Lang_TRX_Hack(gr.top_block):
             for i in range(1, steps+1):
                 r = current_ref + (target_ref - current_ref) * i / steps
                 self.analog_agc2_xx_0.set_reference(r)
-                self.analog_agc2_xx_0.set_gain(r)
                 time.sleep(0.005)  # 5ms per step = 100ms total
             self._current_agc_ref = target_ref
         threading.Thread(target=_ramp, daemon=True).start()
 
-    def set_AGC_Params(self, attack, decay):
+    def set_AGC_Params(self, attack, decay, hang_time=0.0):
         # AGC2 mode control (J command)
         # agc2_ff uses LOOP GAIN semantics (not 1/τ like agc3_cc)
-        # Correct scale: 0.02-0.2 for attack, 0.0002-0.01 for decay
+        # hang_time: default for this mode — but user's h<n> setting takes priority
+        # Exception: AGC OFF always forces hang=0 (unity gain, no loop active)
         if attack == 0 and decay == 0:
             # OFF: unity gain — AGC loop frozen at gain=1.0, no amplitude change
             # Audio level controlled by hardware LNA gain + AFGain volume only
+            self._agc_hang_time   = 0.0   # OFF always disables hang
             self.analog_agc2_xx_0.set_max_gain(1.0)
             self.analog_agc2_xx_0.set_gain(1.0)
             self.analog_agc2_xx_0.set_reference(1.0)
         else:
             self._agc_normal_attack = attack  # stored for agc_hold restore
             self._agc_normal_decay  = decay
-            self.analog_agc2_xx_0.set_max_gain(20)
-            self.analog_agc2_xx_0.set_reference(0.3)
+            # Preserve user's hang setting if already set via h<n> command
+            # Only apply mode default on first use (no user override yet)
+            if not hasattr(self, '_agc_hang_user_set'):
+                self._agc_hang_time = hang_time
+            # else: user has explicitly set hang via h<n> — keep their value
+            self.analog_agc2_xx_0.set_max_gain(200)   # ~46dB range
+            self.analog_agc2_xx_0.set_reference(getattr(self, '_current_agc_ref', 0.3))
             self.analog_agc2_xx_0.set_attack_rate(attack)
             self.analog_agc2_xx_0.set_decay_rate(decay)
+
+    def start_agc_hang_thread(self):
+        # AGC hang thread — runs for the lifetime of the flowgraph
+        # Monitors probe_signal_f output level at 50Hz
+        # When signal drops: holds gain for _agc_hang_time seconds before allowing decay
+        # This prevents audible noise bursts between words/syllables (classic TRX behaviour)
+        import threading, time
+        self._agc_hang_running = True
+        self._agc_hang_time    = getattr(self, '_agc_hang_time', 0.5)
+
+        def _hang_loop():
+            POLL      = 0.02        # 50Hz poll — low CPU overhead
+            # threshold read dynamically from _agc_hang_threshold (set via K command)
+            in_hang   = False
+            hang_end  = 0.0
+
+            while self._agc_hang_running:
+                time.sleep(POLL)
+                try:
+                    hang_time = getattr(self, '_agc_hang_time', 0.0)
+                    if hang_time <= 0.0:
+                        # Hang disabled for this mode (OFF or FAST) — restore decay and skip
+                        if in_hang:
+                            self.analog_agc2_xx_0.set_decay_rate(
+                                getattr(self, '_agc_normal_decay', 0.00002))
+                            in_hang = False
+                        continue
+
+                    level = abs(self.blocks_probe_signal_f_0.level())
+                    now   = time.time()
+
+                    threshold = getattr(self, '_agc_hang_threshold', 0.05)
+                    if level > threshold:
+                        # Signal present — cancel any active hang, let AGC run normally
+                        if in_hang:
+                            self.analog_agc2_xx_0.set_decay_rate(
+                                getattr(self, '_agc_normal_decay', 0.00002))
+                            in_hang = False
+                        hang_end = now + hang_time   # reset hang timer
+
+                    elif now < hang_end:
+                        # Signal gone but within hang window — freeze decay
+                        if not in_hang:
+                            self.analog_agc2_xx_0.set_decay_rate(0.000001)
+                            in_hang = True
+
+                    else:
+                        # Hang expired — restore normal decay
+                        if in_hang:
+                            self.analog_agc2_xx_0.set_decay_rate(
+                                getattr(self, '_agc_normal_decay', 0.00002))
+                            in_hang = False
+
+                except Exception:
+                    pass
+
+        threading.Thread(target=_hang_loop, daemon=True).start()
+
+    def stop_agc_hang_thread(self):
+        self._agc_hang_running = False
 
     def get_Rx_Filt_Low(self):
         return self.Rx_Filt_Low
@@ -804,16 +870,43 @@ def docommands(tb):
               # AGC level adjust: Y<dB> e.g. Y0, Y-10, Y+10
               value=int(line[1:])
               tb.set_AGC_Level(value)
+           if line[0]=='h':
+              # AGC hang time scale: h<n> 0-20 → 0.0-2.0s (×0.1)
+              # h0 = hang disabled, h5 = 0.5s (default), h20 = 2.0s
+              # Sets _agc_hang_user_set so J mode changes don't override user value
+              value = int(line[1:])
+              if value < 0:  value = 0
+              if value > 20: value = 20
+              tb._agc_hang_time     = value * 0.1
+              tb._agc_hang_user_set = True   # lock — J commands won't overwrite
+           if line[0]=='e':  # AGC threshold scale (was K — K is CW key)
+              # AGC threshold scale: e<n> 1-20 → 0.01-0.20 (×0.01)
+              # e5 = 0.05 (default), e1 = very sensitive, e20 = needs strong signal
+              value = int(line[1:])
+              if value <  1: value =  1
+              if value > 20: value = 20
+              tb._agc_hang_threshold = value * 0.01
            if line[0]=='J':
               # AGC mode: J0=OFF J1=FAST J2=MED J3=SLOW J4=LONG
               value=int(line[1:])
-              # agc2_ff loop gain params (NOT agc3 rate params)
+              # agc2_ff loop gain params — τ ≈ 1/(rate × 48000)
+              # attack: fast enough to catch peaks without distortion
+              # decay:  realistic TRX values (was 100× too fast)
+              # hang:   hold time in seconds after signal drops (0=disabled)
+              #
+              # Mode   attack    decay      τ_attack  τ_decay   hang    TRX equivalent
+              # ──────────────────────────────────────────────────────────────────────
+              # OFF    bypass    bypass     —         —         0s      unity gain
+              # FAST   0.10      0.0002     0.2ms     ~100ms    0s      CW / strong AM
+              # MED    0.05      0.00005    0.4ms     ~420ms    0.2s    SSB fast QSO
+              # SLOW   0.02      0.00002    1.0ms     ~1.0s     0.5s    SSB normal DX
+              # LONG   0.01      0.000005   2.1ms     ~4.2s     1.5s    Slow fading / AM
               params = [
-                (0,     0      ),  # J0 OFF  — bypass
-                (0.2,   0.01   ),  # J1 FAST — τ_attack=0.1ms, τ_decay=2ms
-                (0.1,   0.002  ),  # J2 MED  — τ_attack=0.2ms, τ_decay=10ms
-                (0.05,  0.001  ),  # J3 SLOW — τ_attack=0.4ms, τ_decay=21ms
-                (0.02,  0.0002 ),  # J4 LONG — τ_attack=1.0ms, τ_decay=104ms
+                (0,     0,        0.0 ),   # J0 OFF
+                (0.10,  0.0002,   0.0 ),   # J1 FAST
+                (0.05,  0.00005,  0.2 ),   # J2 MED
+                (0.02,  0.00002,  0.5 ),   # J3 SLOW
+                (0.01,  0.000005, 1.5 ),   # J4 LONG
               ]
               if 0 <= value < len(params):
                 tb.set_AGC_Params(*params[value])
@@ -825,7 +918,9 @@ def docommands(tb):
 def main(top_block_cls=Lang_TRX_Hack, options=None):
     tb = top_block_cls()
     tb.start()
+    tb.start_agc_hang_thread()   # AGC hang — runs for lifetime of flowgraph
     docommands(tb)
+    tb.stop_agc_hang_thread()
     tb.stop()
     tb.wait()
 

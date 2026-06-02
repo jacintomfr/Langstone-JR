@@ -221,10 +221,10 @@ int lastmode=0;
 char * modename[nummode]={"USB","LSB","CW ","CWN","FM ","AM "};
 enum {USB,LSB,CW,CWN,FM,AM};
 
-#define numSettings 33
+#define numSettings 35
 
-char * settingText[numSettings]={"S-METER ZERO= ","FFT REF= ","WF LEVEL= ","AGC ADJ= ","SPEC STRETCH= ","SSB RX FILTER HIGH= ","SSB RX FILTER LOW= ","SSB GAIN EQ-H= ","SSB GAIN EQ-M2= ","SSB GAIN EQ-M1= ","SSB GAIN EQ-L= ","SSB MIC GAIN= ","FM MIC GAIN= ","AM MIC GAIN= ","TX AMP= ","TX GAIN= ","RX AMP= ","RX GAIN= ","RX BASEBAND= "," RX OFFSET= ","RX HARMONIC MIXING= "," TX OFFSET= ","TX HARMONIC MIXING= ","REPEATER SHIFT= ","CTCSS= ","BAND BITS (RX)= ","BAND BITS (TX)= ","24 BANDS= ","CW IDENT= ","CALL ID= ","CWID CARRIER= ","CW BREAK-IN HANG TIME= ","ROTATE SCREEN = "};
-enum {S_ZERO,FFT_REF,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_AMP,TX_GAIN,RX_AMP,RX_GAIN,RX_BASE,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
+char * settingText[numSettings]={"S-METER ZERO= ","FFT REF= ","WF LEVEL= ","AGC ADJ= ","SPEC STRETCH= ","SSB RX FILTER HIGH= ","SSB RX FILTER LOW= ","SSB GAIN EQ-H= ","SSB GAIN EQ-M2= ","SSB GAIN EQ-M1= ","SSB GAIN EQ-L= ","SSB MIC GAIN= ","FM MIC GAIN= ","AM MIC GAIN= ","TX AMP= ","TX GAIN= ","RX AMP= ","RX GAIN= ","RX BASEBAND= "," RX OFFSET= ","RX HARMONIC MIXING= "," TX OFFSET= ","TX HARMONIC MIXING= ","REPEATER SHIFT= ","CTCSS= ","BAND BITS (RX)= ","BAND BITS (TX)= ","24 BANDS= ","CW IDENT= ","CALL ID= ","CWID CARRIER= ","CW BREAK-IN HANG TIME= ","ROTATE SCREEN = ","AGC HANG TIME= ","AGC THRESHOLD= "};
+enum {S_ZERO,FFT_REF,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_AMP,TX_GAIN,RX_AMP,RX_GAIN,RX_BASE,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE,AGC_HANG,AGC_THRESH};
 
 int settingNo=RX_GAIN;
 int setIndex=0;
@@ -399,6 +399,11 @@ int  callSignLen  = 5;               // number of active chars in callSign     /
 int bandAGCAdj[numband]={0};     // AGC level adjust per band
 #define AGCAdj bandAGCAdj[band]
 int AGCAdjByMode[6] = {0,0,0,0,0,0};  // AGC level memory per mode (USB,LSB,CW,CWN,FM,AM)
+// AGC hang and threshold — user calibration via SET menu
+// agcHangScale: 0-20, maps to 0.0-2.0s (×0.1). Default=5 → 0.5s
+// agcThreshScale: 1-20, maps to threshold 0.01-0.20 (×0.01). Default=5 → 0.05
+int agcHangScale  = 5;   // SET menu: AGC HANG TIME=
+int agcThreshScale= 5;   // SET menu: AGC THRESHOLD=
 float wf_low_smooth = -999.0f; // IIR smoothed noise floor for auto waterfall (-999=uninitialised)
 int smNeedsFullRedraw = 0;     // set by P_Meter on last TX frame to force S_Meter full redraw
 int pmNeedsReset = 0;          // set on TX start to reset P_Meter statics
@@ -2444,6 +2449,9 @@ void initSDR(void)
   char agcStr[4];
   sprintf(agcStr, "J%d", agcMode);
   sendFifo(agcStr);
+  // Restore AGC hang and threshold to Python
+  { char hs[8]; sprintf(hs,"h%d",agcHangScale);  sendFifo(hs); }
+  { char ts[8]; sprintf(ts,"e%d",agcThreshScale); sendFifo(ts); }
 }
 
 void displayMenu()
@@ -4501,6 +4509,26 @@ if(settingNo==BAND_BITS_TX)        // Band Bits Tx
       displaySetting(settingNo);
       }
 
+  if(settingNo==AGC_HANG)     // AGC hang time scale 0-20 → 0.0-2.0s
+      {
+      agcHangScale = agcHangScale + mouseScroll;
+      mouseScroll=0;
+      if(agcHangScale <  0) agcHangScale =  0;
+      if(agcHangScale > 20) agcHangScale = 20;
+      { char hs[8]; sprintf(hs,"h%d",agcHangScale); sendFifo(hs); }
+      displaySetting(settingNo);
+      }
+
+  if(settingNo==AGC_THRESH)   // AGC threshold scale 1-20 → 0.01-0.20
+      {
+      agcThreshScale = agcThreshScale + mouseScroll;
+      mouseScroll=0;
+      if(agcThreshScale <  1) agcThreshScale =  1;
+      if(agcThreshScale > 20) agcThreshScale = 20;
+      { char ts[8]; sprintf(ts,"e%d",agcThreshScale); sendFifo(ts); }
+      displaySetting(settingNo);
+      }
+
   if(settingNo==SPEC_STRETCH)      // Spectrum stretch
       {
       specStretch = specStretch + mouseScroll;
@@ -4875,6 +4903,20 @@ if(se==BAND_BITS_TX)
   sprintf(valStr,"%+d dB",AGCAdj);
   displayStr(valStr);
   }
+  if(se==AGC_HANG)
+  {
+  float hang_s = agcHangScale * 0.1f;
+  if(agcHangScale == 0)
+    displayStr("0 (OFF)");
+  else
+    { sprintf(valStr,"%.1f s",hang_s); displayStr(valStr); }
+  }
+  if(se==AGC_THRESH)
+  {
+  float thr = agcThreshScale * 0.01f;
+  sprintf(valStr,"%.2f",thr);
+  displayStr(valStr);
+  }
   if(se==TX_GAIN)
   {
   sprintf(valStr,"%d",bandTxGain[band]);
@@ -5139,6 +5181,8 @@ while(fscanf(conffile,"%49s %99s [^\n]\n",variable,value) !=EOF)
     }
     if(strstr(variable,"AGCAdjMode"))   sscanf(value,"%d %d %d %d %d %d",&AGCAdjByMode[0],&AGCAdjByMode[1],&AGCAdjByMode[2],&AGCAdjByMode[3],&AGCAdjByMode[4],&AGCAdjByMode[5]);
     if(strstr(variable,"specStretch"))  sscanf(value,"%d",&specStretch);
+    if(strstr(variable,"agcHangScale"))  sscanf(value,"%d",&agcHangScale);
+    if(strstr(variable,"agcThreshScale")) sscanf(value,"%d",&agcThreshScale);
     if(strstr(variable,"callSign"))     { strncpy(callSign,value,11); callSign[11]=0; }
     if(strstr(variable,"tuneDigit")) sscanf(value,"%d",&tuneDigit);   
     if(strstr(variable,"mode")) sscanf(value,"%d",&mode);
@@ -5240,6 +5284,8 @@ fprintf(conffile,"agcMode %d\n",agcMode);
     fprintf(conffile,"bandSpecStretch%02d %d\n",_b,bandSpecStretch[_b]);
 fprintf(conffile,"AGCAdjMode %d %d %d %d %d %d\n",AGCAdjByMode[0],AGCAdjByMode[1],AGCAdjByMode[2],AGCAdjByMode[3],AGCAdjByMode[4],AGCAdjByMode[5]);
 fprintf(conffile,"callSign %s\n",callSign);
+fprintf(conffile,"agcHangScale %d\n",agcHangScale);
+fprintf(conffile,"agcThreshScale %d\n",agcThreshScale);
 
 fclose(conffile);
 return 0;
