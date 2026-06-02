@@ -12,6 +12,8 @@
 
 Langstone-JR is a fork and adaptation of the original **Langstone V3 SDR Transceiver** project by **Colin Durbridge G4EML**, ported and extended to run on the **Raspberry Pi 5** with the **HackRF One** SDR module.
 
+![Langstone-JR Screenshot](Langstone-JR.png)
+
 This is an experimental project to produce a simple VHF, UHF and Microwave SDR Transceiver operating on SSB, CW and FM modes, using a touchscreen interface and mouse-wheel tuning.
 
 It was inspired by the very successful Portsdown Amateur Television system created by the British Amateur Television Club.
