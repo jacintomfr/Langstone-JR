@@ -1394,23 +1394,32 @@ void S_Meter(void)
     }
  
 
-  // ── Squelch gate ─────────────────────────────────────────────
-  int gated2 = ((sMeter < squelch) && (squelch > 0)) ? 1 : 0;
-  if(gated2)
+  // ── Squelch gate — histerese + hold time para estabilidade ──────
+  #define SQL_HYSTERESIS 3
+  #define SQL_HOLD_FRAMES 30  // ~300ms
+  static int sqlHoldCount = 0;
+
+  if(squelch == 0)
     {
-    squelchGate = 0;
-    if(squelchGate != lastSquelchGate)
-      { setMute(1); lastSquelchGate = squelchGate; }
+    if(lastSquelchGate != 1) { setMute(0); lastSquelchGate = 1; }
+    sqlHoldCount = 0;
+    }
+  else if(sMeter >= (squelch + SQL_HYSTERESIS))
+    {
+    sqlHoldCount = 0;
+    if(lastSquelchGate != 1) { setMute(0); lastSquelchGate = 1; }
+    }
+  else if(sMeter < (squelch - SQL_HYSTERESIS))
+    {
+    sqlHoldCount++;
+    if(sqlHoldCount >= SQL_HOLD_FRAMES && lastSquelchGate != 0)
+      { setMute(1); lastSquelchGate = 0; }
     }
   else
     {
-    squelchGate = 1;
-    if(squelchGate != lastSquelchGate)
-      { setMute(0); lastSquelchGate = squelchGate; }
+    sqlHoldCount = 0;
     }
-
-
-
+  squelchGate = lastSquelchGate;
 }
 
 

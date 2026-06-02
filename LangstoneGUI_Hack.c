@@ -1361,19 +1361,41 @@ void S_Meter(void)
       }
     }
 
-  // ── Squelch gate — lógica original inalterada ─────────────────
-  if(gated)
+  // ── Squelch gate — histerese + hold time para estabilidade ──────
+  // Histerese: abre com sinal > squelch+3, fecha com sinal < squelch-3
+  // Hold: só fecha após SQL_HOLD_FRAMES frames contínuos abaixo do threshold
+  // Evita chattering e corte de sílabas entre palavras
+  #define SQL_HYSTERESIS 3    // dB de margem acima/abaixo do threshold
+  #define SQL_HOLD_FRAMES 30  // ~300ms a 100Hz — delay antes de fechar
+  static int sqlHoldCount = 0;
+
+  if(squelch == 0)
     {
-    squelchGate = 0;
-    if(squelchGate != lastSquelchGate)
-      { setMute(1); lastSquelchGate = squelchGate; }
+    // SQL desligado — sempre aberto
+    if(lastSquelchGate != 1) { setMute(0); lastSquelchGate = 1; }
+    sqlHoldCount = 0;
+    }
+  else if(sMeter >= (squelch + SQL_HYSTERESIS))
+    {
+    // Sinal forte — abre imediatamente
+    sqlHoldCount = 0;
+    if(lastSquelchGate != 1) { setMute(0); lastSquelchGate = 1; }
+    }
+  else if(sMeter < (squelch - SQL_HYSTERESIS))
+    {
+    // Sinal fraco — incrementa contador de hold
+    sqlHoldCount++;
+    if(sqlHoldCount >= SQL_HOLD_FRAMES && lastSquelchGate != 0)
+      { setMute(1); lastSquelchGate = 0; }
     }
   else
     {
-    squelchGate = 1;
-    if(squelchGate != lastSquelchGate)
-      { setMute(0); lastSquelchGate = squelchGate; }
+    // Zona de histerese — mantém estado actual, reset hold
+    sqlHoldCount = 0;
     }
+
+  // Update gated flag for display (color of S-meter text)
+  gated = (lastSquelchGate == 0 && squelch > 0) ? 1 : 0;
 }
 
 void P_Meter(void)
