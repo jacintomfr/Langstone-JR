@@ -494,6 +494,23 @@ class Lang_TRX_Hack(gr.top_block):
         # Disabled — noise gate caused audio dropout on filter/AGC adjustments
         pass
 
+    def agc_hold(self, duration_ms=200):
+        # Freeze AGC gain during filter/setting changes to prevent dropout
+        # Saves current gain, sets decay=0 for duration_ms, then restores
+        import threading, time
+        current_gain  = self.analog_agc2_xx_0.get_gain()
+        normal_decay  = getattr(self, '_agc_normal_decay', 0.00002)
+        def _hold():
+            # Freeze: set decay near-zero so gain doesn't change during transient
+            self.analog_agc2_xx_0.set_decay_rate(0.000001)
+            self.analog_agc2_xx_0.set_attack_rate(0.000001)
+            self.analog_agc2_xx_0.set_gain(current_gain)
+            time.sleep(duration_ms / 1000.0)
+            # Restore normal AGC behaviour
+            self.analog_agc2_xx_0.set_attack_rate(getattr(self, '_agc_normal_attack', 0.1))
+            self.analog_agc2_xx_0.set_decay_rate(normal_decay)
+        threading.Thread(target=_hold, daemon=True).start()
+
     def set_AGC_Level(self, level_db):
         # AGC level: ramp reference gradually to avoid gain jump transient
         # agc2_ff set_reference() works but causes glitch if stepped directly
@@ -525,6 +542,8 @@ class Lang_TRX_Hack(gr.top_block):
             self.analog_agc2_xx_0.set_gain(1.0)
             self.analog_agc2_xx_0.set_reference(1.0)
         else:
+            self._agc_normal_attack = attack  # stored for agc_hold restore
+            self._agc_normal_decay  = decay
             self.analog_agc2_xx_0.set_max_gain(20)
             self.analog_agc2_xx_0.set_reference(0.3)
             self.analog_agc2_xx_0.set_attack_rate(attack)
@@ -534,6 +553,7 @@ class Lang_TRX_Hack(gr.top_block):
         return self.Rx_Filt_Low
 
     def set_Rx_Filt_Low(self, Rx_Filt_Low):
+        self.agc_hold(250)  # freeze AGC during filter retap
         self.Rx_Filt_Low = Rx_Filt_Low
         self.band_pass_filter_0.set_taps(firdes.complex_band_pass(1, 48000, self.Rx_Filt_Low, self.Rx_Filt_High, 500, window.WIN_HAMMING, 6.76))
 
@@ -541,6 +561,7 @@ class Lang_TRX_Hack(gr.top_block):
         return self.Rx_Filt_High
 
     def set_Rx_Filt_High(self, Rx_Filt_High):
+        self.agc_hold(250)  # freeze AGC during filter retap — prevents dropout
         self.Rx_Filt_High = Rx_Filt_High
         self.band_pass_filter_0.set_taps(firdes.complex_band_pass(1, 48000, self.Rx_Filt_Low, self.Rx_Filt_High, 500, window.WIN_HAMMING, 6.76))
         # Also update post-demod low_pass_filter_0 — hardcoded 3kHz was cutting AM highs

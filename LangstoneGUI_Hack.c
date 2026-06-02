@@ -4570,13 +4570,18 @@ void takeSnapshot(void)
     }
   free(fbuf);
 
-  // Filename: snapshot_CU2ED_HHMMSS_DDMMYYYY.png
-  // Build clean callsign — strip _ (space placeholders) from array
-  char cleanCS[12]={0};
-  for(int i=0;i<11;i++) {
-      if(callSign[i]==0 || callSign[i]==95) break;  // 95 = '_'
-      cleanCS[i]=callSign[i];
+  // Filename: snapshot_CU2ED_____HHMMSS_DDMMYYYY.png
+  // Build padded callsign — always 10 chars, padded with _ to the right
+  char cleanCS[11]={0};
+  int csLen=0;
+  for(int i=0;i<10;i++) {
+      char c = callSign[i];
+      if(c==0 || c==95) break;  // stop at _ placeholder or null
+      cleanCS[i]=c; csLen++;
   }
+  // Pad with underscores to exactly 10 chars
+  for(int i=csLen;i<10;i++) cleanCS[i]='_';
+  cleanCS[10]=0;
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
   char fname[128];
