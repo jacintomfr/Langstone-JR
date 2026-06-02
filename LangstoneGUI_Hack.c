@@ -394,7 +394,7 @@ int bandWFFloor[numband]={0};    // waterfall brightness offset per band
 #define WFFloor bandWFFloor[band]
 int bandSpecStretch[numband];    // spectrum stretch per band
 #define specStretch bandSpecStretch[band]
-char callSign[12] = "CU2ED      ";  // operator callsign display (max 11 chars + null)
+char callSign[12] = "CU2ED______";  // _ = space placeholder  // operator callsign display (max 11 chars + null)
 int  callSignLen  = 5;               // number of active chars in callSign     // waterfall brightness offset
 int bandAGCAdj[numband]={0};     // AGC level adjust per band
 #define AGCAdj bandAGCAdj[band]
@@ -4576,7 +4576,7 @@ void takeSnapshot(void)
   int csLen=0;
   for(int i=0;i<10;i++) {
       char c = callSign[i];
-      if(c==0 || c==95) break;  // stop at _ placeholder or null
+      if(c==0 || c==95 || c==32) break;  // stop at null, '_' placeholder, or space
       cleanCS[i]=c; csLen++;
   }
   // Pad with underscores to exactly 10 chars
