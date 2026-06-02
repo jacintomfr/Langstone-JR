@@ -250,8 +250,8 @@ enum {USB,LSB,CW,CWN,FM,AM};
 #define BTN_WARN   3
 #define BTN_AMBER  4  // amber style button
 
-char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","Rx Baseband= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Att= ","Rx Gain= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Call ID= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
-enum {S_ZERO,FFT_REF,RX_BASE,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_ATT,RX_GAIN,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
+char * settingText[numSettings]={"S-Meter Zero= ","FFT Ref= ","WF Level= ","AGC Adj= ","Spec Stretch= ","SSB Rx Filter High= ","SSB Rx Filter Low= ","SSB Gain EQ-H= ","SSB Gain EQ-M2= ","SSB Gain EQ-M1= ","SSB Gain EQ-L= ","SSB Mic Gain= ","FM Mic Gain= ","AM Mic Gain= ","Tx Att= ","Rx Gain= ","Rx Baseband= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Repeater Shift= ","CTCSS= ","Band Bits (Rx)= ","Band Bits (Tx)= ","24 Bands= ","CW Ident= ","Call ID= ","CWID Carrier= ","CW Break-In Hang Time= ","Rotate Screen = "};
+enum {S_ZERO,FFT_REF,WF_FLOOR,AGC_ADJ,SPEC_STRETCH,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,SSB_MIC,FM_MIC,AM_MIC,TX_ATT,RX_GAIN,RX_BASE,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
 
 int settingNo=RX_GAIN;
 int setIndex=0;
