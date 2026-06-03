@@ -544,24 +544,21 @@ class Lang_TRX_Hack(gr.top_block):
     def set_AGC_Params(self, attack, decay):
         # AGC2 mode control (J command)
         # agc2_ff uses LOOP GAIN semantics (not 1/τ like agc3_cc)
-        # Correct scale: 0.02-0.2 for attack, 0.0002-0.01 for decay
-        # h<n> multiplier slows decay:  h0=×1.0 (no change), h20=×0.10 (10× slower)
-        # e<n> multiplier slows attack: e0=×1.0 (no change), e20=×0.10 (10× slower)
+        # h=0 and e=0 → no change to original mode values (safe default)
+        # h/e log scale: mult = 10^(-scale × 2/20)
+        #   h=0 → ×1.0 (original), h=10 → ×0.1, h=20 → ×0.01 (100× slower)
         if attack == 0 and decay == 0:
-            # OFF: unity gain — AGC loop frozen at gain=1.0, no amplitude change
-            # Audio level controlled by hardware LNA gain + AFGain volume only
+            # OFF: unity gain
             self.analog_agc2_xx_0.set_max_gain(1.0)
             self.analog_agc2_xx_0.set_gain(1.0)
             self.analog_agc2_xx_0.set_reference(1.0)
         else:
-            self._agc_normal_attack = attack  # stored for agc_hold restore
+            self._agc_normal_attack = attack
             self._agc_normal_decay  = decay
-            # h maps 0-20 → multiplier 1.0-0.10 (h0=no change, h20=10× slower decay)
-            h = getattr(self, '_agc_h_scale', 5)
-            h_mult = 1.0 - (h / 20.0) * 0.9
-            # e maps 0-20 → multiplier 1.0-0.10 (e0=no change, e20=10× slower attack)
-            e = getattr(self, '_agc_e_scale', 5)
-            e_mult = 1.0 - (e / 20.0) * 0.9
+            h = getattr(self, '_agc_h_scale', 0)
+            e = getattr(self, '_agc_e_scale', 0)
+            h_mult = (10.0 ** (-h * 2.0 / 20.0)) if h > 0 else 1.0
+            e_mult = (10.0 ** (-e * 2.0 / 20.0)) if e > 0 else 1.0
             self.analog_agc2_xx_0.set_max_gain(20)
             self.analog_agc2_xx_0.set_reference(0.3)
             self.analog_agc2_xx_0.set_attack_rate(attack * e_mult)
@@ -822,35 +819,29 @@ def docommands(tb):
               value=int(line[1:])
               tb.set_AGC_Level(value)
            if line[0]=='h':
-              # AGC hang time scale: h<n> 0-20
-              # Slows decay rate: h0=no change, h20=10× slower
-              # Re-applies immediately to current AGC mode
+              # AGC decay multiplier: h0=off(original), h10=×0.1, h20=×0.01
               value=int(line[1:])
               if value <  0: value =  0
               if value > 20: value = 20
               tb._agc_h_scale = value
-              # Re-apply current mode params with new multiplier
-              d = getattr(tb, '_agc_normal_decay',  0.001)
-              a = getattr(tb, '_agc_normal_attack', 0.1)
-              if a > 0 and d > 0:
-                  h_mult = 1.0 - (value / 20.0) * 0.9
-                  e_mult = 1.0 - (getattr(tb, '_agc_e_scale', 5) / 20.0) * 0.9
+              d = getattr(tb, '_agc_normal_decay',  None)
+              a = getattr(tb, '_agc_normal_attack', None)
+              if d and a:
+                  h_mult = (10.0 ** (-value * 2.0 / 20.0)) if value > 0 else 1.0
+                  e_mult = (10.0 ** (-getattr(tb,'_agc_e_scale',0)*2.0/20.0)) if getattr(tb,'_agc_e_scale',0) > 0 else 1.0
                   tb.analog_agc2_xx_0.set_decay_rate(d * h_mult)
                   tb.analog_agc2_xx_0.set_attack_rate(a * e_mult)
            if line[0]=='e':
-              # AGC threshold scale: e<n> 0-20
-              # Slows attack rate: e0=no change, e20=10× slower
-              # Re-applies immediately to current AGC mode
+              # AGC attack multiplier: e0=off(original), e10=×0.1, e20=×0.01
               value=int(line[1:])
               if value <  0: value =  0
               if value > 20: value = 20
               tb._agc_e_scale = value
-              # Re-apply current mode params with new multiplier
-              d = getattr(tb, '_agc_normal_decay',  0.001)
-              a = getattr(tb, '_agc_normal_attack', 0.1)
-              if a > 0 and d > 0:
-                  h_mult = 1.0 - (getattr(tb, '_agc_h_scale', 5) / 20.0) * 0.9
-                  e_mult = 1.0 - (value / 20.0) * 0.9
+              d = getattr(tb, '_agc_normal_decay',  None)
+              a = getattr(tb, '_agc_normal_attack', None)
+              if d and a:
+                  h_mult = (10.0 ** (-getattr(tb,'_agc_h_scale',0)*2.0/20.0)) if getattr(tb,'_agc_h_scale',0) > 0 else 1.0
+                  e_mult = (10.0 ** (-value * 2.0 / 20.0)) if value > 0 else 1.0
                   tb.analog_agc2_xx_0.set_decay_rate(d * h_mult)
                   tb.analog_agc2_xx_0.set_attack_rate(a * e_mult)
            if line[0]=='J':

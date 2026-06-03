@@ -424,10 +424,10 @@ int bandAGCAdj[numband]={0};     // AGC level adjust per band
 #define AGCAdj bandAGCAdj[band]
 int AGCAdjByMode[6] = {0,0,0,0,0,0};  // AGC level memory per mode (USB,LSB,CW,CWN,FM,AM)
 // AGC hang and threshold — user calibration via SET menu
-// agcHangScale: 0-20 → 0.0-2.0s (×0.1). Default=5 → 0.5s. h<n> FIFO command.
-// agcThreshScale: 1-20 → 0.01-0.20 (×0.01). Default=5 → 0.05. e<n> FIFO command.
-int agcHangScale   = 5;
-int agcThreshScale = 5;
+// agcHangScale: 0-20 → decay multiplier log scale. 0=original, 20=100× slower decay
+// agcThreshScale: 0-20 → attack multiplier log scale. 0=original, 20=100× slower attack
+int agcHangScale   = 0;
+int agcThreshScale = 0;
 float wf_low_smooth = -999.0f; // IIR smoothed noise floor for auto waterfall (-999=uninitialised)
 int smNeedsFullRedraw = 0;     // set by P_Meter on last TX frame to force S_Meter full redraw
 int pmNeedsReset = 0;          // set on TX start to reset P_Meter statics
@@ -5034,11 +5034,11 @@ if(se==BAND_BITS_TX)
   if(se==AGC_HANG)
   {
   if(agcHangScale==0) displayStr("OFF");
-  else { sprintf(valStr,"%.1f s",(float)agcHangScale*0.1f); displayStr(valStr); }
+  else { sprintf(valStr,"x%.2f",(float)pow(10.0,-agcHangScale*2.0/20.0)); displayStr(valStr); }
   }
   if(se==AGC_THRESH)
-  {
-  sprintf(valStr,"%.2f",(float)agcThreshScale*0.01f);
+  if(agcThreshScale==0) displayStr("OFF");
+  else { sprintf(valStr,"x%.2f",(float)pow(10.0,-agcThreshScale*2.0/20.0)); displayStr(valStr); }
   displayStr(valStr);
   }
   if(se==TX_GAIN)
