@@ -402,6 +402,13 @@ typedef struct { double freq; int mode; char label[7]; int used; } MemChan;
 MemChan memChan[NUM_MEM] = {0};
 int memFirstChan = 0;   // 0 = M1-M6, 6 = M7-M12
 int memSavePending = 0; // 1 = next mem touch stores instead of recalls
+
+// ── Long press detection for MEM save ────────────────────────────────────────
+// touch start → record time + position
+// touch end   → if duration ≥ 3s AND popup MEM open → save to that channel
+static struct timespec lpTouchStart = {0,0};  // time of touch start
+static int lpTouchX = -1, lpTouchY = -1;      // position at touch start
+#define LONGPRESS_MS 3000                      // 3 seconds
 enum {NONE,MODE,BAND,BEACON,MEM};
 
 #define pttPin 17       // Physical pin is 11
@@ -489,9 +496,20 @@ int main(int argc, char* argv[])
                                                                                                                     
    if(touchPresent)
      {
-       if(getTouch()==1)
+       int tr = getTouch();
+       if(tr==1)
         {
+         // Touch START — record time and position for long press detection
+         clock_gettime(CLOCK_MONOTONIC, &lpTouchStart);
+         lpTouchX = touchX;
+         lpTouchY = touchY;
          processTouch();
+        }
+       else if(tr==2)
+        {
+         // Touch END — check for long press (MEM save)
+         memLongPressCheck();
+         lpTouchX = -1;  // reset
         }
      }
     
@@ -2826,13 +2844,10 @@ void displayPopupMem(void)
     int mstate = memChan[ch].used ? BTN_OFF : BTN_WARN;
     drawButtonMem2L(popupX+(n+1)*buttonSpaceX, popupY, ch, mstate);
     }
-  // SAVE mode indicator
-  if(memSavePending)
-    {
-    gotoXY(0, settingY); textSize=2; setForeColour(0,220,255);
-    displayStr("Touch memory to SAVE current freq+mode ");
-    textSize=1;
-    }
+  // Usage hint in status line
+  gotoXY(0, settingY); textSize=2; setForeColour(100,100,100);
+  displayStr("Toque=recall   3seg=gravar              ");
+  textSize=1;
   popupSel=MEM;
 }
 
@@ -3044,6 +3059,44 @@ void setFreqInc()
        
 
 
+// ── memLongPressCheck — called on touch END when MEM popup is open ────────────
+static int memLongPressCheck(void)
+{
+  if(popupSel != MEM) return 0;
+  if(lpTouchX < 0)    return 0;
+
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  long ms = (now.tv_sec  - lpTouchStart.tv_sec)  * 1000 +
+            (now.tv_nsec - lpTouchStart.tv_nsec) / 1000000;
+
+  if(ms < LONGPRESS_MS) return 0;
+
+  for(int n=0; n<6; n++)
+    {
+    int bx = popupX + (n+1)*buttonSpaceX;
+    int by = popupY;
+    if(lpTouchX >= bx && lpTouchX <= bx+buttonWidth &&
+       lpTouchY >= by && lpTouchY <= by+buttonHeight)
+      {
+      int ch = n + memFirstChan;
+      memChan[ch].freq = freq;
+      memChan[ch].mode = mode;
+      memChan[ch].used = 1;
+      char full[12]; sprintf(full,"%.3f",freq);
+      strncpy(memChan[ch].label,full,6); memChan[ch].label[6]=0;
+      saveMemConfig();
+      clearPopUp();
+      gotoXY(0,settingY); textSize=2; setForeColour(0,220,0);
+      char msg[42]; sprintf(msg,"M%d saved: %.3f MHz",ch+1,freq);
+      displayStr(msg); textSize=1;
+      return 1;
+      }
+    }
+  return 0;
+}
+
+// ── memLongPressCheck inserted above ─────────────────────────────────────────
 void processTouch()
 { 
 
@@ -3432,47 +3485,22 @@ if(popupSel==MEM)
     displayPopupMem();
     return;
     }
-  // Buttons 1-6: memory channels
+  // Buttons 1-6: short press = RECALL, long press = SAVE (handled on touch end)
   for(int n=0; n<6; n++)
     {
     if(buttonTouched(popupX+(n+1)*buttonSpaceX, popupY))
       {
       int ch = n + memFirstChan;
-      if(memSavePending)
+      if(memChan[ch].used)
         {
-        // SAVE current freq+mode to this channel
-        memChan[ch].freq = freq;
-        memChan[ch].mode = mode;
-        memChan[ch].used = 1;
-        // Label = frequency string
-        sprintf(memChan[ch].label,"%.3f", freq);
-        memChan[ch].label[6]=0;
-        memSavePending=0;
-        saveMemConfig();
+        // RECALL
+        freq = memChan[ch].freq;
+        mode = memChan[ch].mode;
+        setMode(mode);
+        setFreq(freq);
         clearPopUp();
-        // Show confirmation
-        gotoXY(0, settingY); textSize=2; setForeColour(0,220,0);
-        displayStr("Memory saved                    ");
-        textSize=1;
         }
-      else
-        {
-        // RECALL — load freq+mode from this channel
-        if(memChan[ch].used)
-          {
-          freq = memChan[ch].freq;
-          mode = memChan[ch].mode;
-          setMode(mode);
-          setFreq(freq);
-          clearPopUp();
-          }
-        else
-          {
-          // Empty channel — enter save mode
-          memSavePending=1;
-          displayPopupMem();
-          }
-        }
+      // Empty channel: do nothing on short press — long press will save
       return;
       }
     }
