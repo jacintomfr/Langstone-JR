@@ -2688,33 +2688,145 @@ void displayPopupBeacon(void)
   popupSel=BEACON;
 }
 
+// ── getBandLabel — band name + stripped frequency for 2-line button ──────────
+// Line 1: band name ("2M","70CM"...)
+// Line 2: frequency with fixed prefix removed — only the variable digits
+//   2M:   144.200 → "4.200"   (strip 2: "14")
+//   70CM: 432.680 → "32.680"  (strip 1: "4")
+//   23CM: 1296.200→ "96.200"  (strip 2: "12")
+//   HF:   28.500  → "8.500"   (strip 1: "2")
+static void getBandLabel(double freqMHz, char *bandStr, char *freqStr)
+{
+  char full[12];
+  sprintf(full, "%.3f", freqMHz);
+  int strip = 1;   // default: remove 1 leading digit
+
+  if     (freqMHz <  30.0)  { strcpy(bandStr,"HF");   strip=1; }
+  else if(freqMHz <  80.0)  { strcpy(bandStr,"6M");   strip=1; }
+  else if(freqMHz < 110.0)  { strcpy(bandStr,"4M");   strip=1; }
+  else if(freqMHz < 170.0)  { strcpy(bandStr,"2M");   strip=2; }
+  else if(freqMHz < 270.0)  { strcpy(bandStr,"1.25M");strip=2; }
+  else if(freqMHz < 450.0)  { strcpy(bandStr,"70CM"); strip=1; }
+  else if(freqMHz < 700.0)  { strcpy(bandStr,"33CM"); strip=1; }
+  else if(freqMHz < 1100.0) { strcpy(bandStr,"23CM"); strip=2; }
+  else if(freqMHz < 2500.0) { strcpy(bandStr,"13CM"); strip=2; }
+  else                      { strcpy(bandStr,"UHF");  strip=2; }
+
+  strncpy(freqStr, full+strip, 7);
+  freqStr[6] = 0;
+}
+
+// ── drawButtonMem2L — 2-line memory button ───────────────────────────────────
+// Line 1: band label ("2M","70CM"...) — white
+// Line 2: frequency  ("144.20"...)   — cyan
+// Empty slot: single-line "M<n>"
+void drawButtonMem2L(int x, int y, int ch, int state)
+{
+  if(!memChan[ch].used)
+    {
+    char mstr[5]; sprintf(mstr,"M%d",ch+1);
+    drawButtonIC7300(x, y, mstr, state);
+    return;
+    }
+
+  // Draw button shell with space label (background + border)
+  drawButtonIC7300(x, y, " ", state);
+
+  // Text colours from state
+  int txR,txG,txB,bgR,bgG,bgB;
+  switch(state)
+    {
+    case BTN_ON:
+      txR=0;  txG=0;  txB=0; bgR=0; bgG=170; bgB=187; break;
+    case BTN_WARN:
+      txR=192;txG=152;txB=32;bgR=20;bgG=18; bgB=12;  break;
+    default:
+      txR=255;txG=255;txB=255;bgR=50;bgG=50; bgB=50;  break;
+    }
+
+  #define MFI(c) ( \
+    ((c)>='A'&&(c)<='Z')?(c)-'A': \
+    ((c)>='a'&&(c)<='z')?(c)-'a': \
+    ((c)>='0'&&(c)<='9')?26+(c)-'0': \
+    (c)==' '?36:(c)=='-'?37:(c)=='.'?38:(c)=='/'?39:(c)=='+'?40:36)
+
+  static const unsigned char mf[][5]={
+    {0x7E,0x09,0x09,0x09,0x7E},{0x7F,0x49,0x49,0x49,0x36},
+    {0x3E,0x41,0x41,0x41,0x22},{0x7F,0x41,0x41,0x22,0x1C},
+    {0x7F,0x49,0x49,0x49,0x41},{0x7F,0x09,0x09,0x09,0x01},
+    {0x3E,0x41,0x49,0x49,0x7A},{0x7F,0x08,0x08,0x08,0x7F},
+    {0x00,0x41,0x7F,0x41,0x00},{0x20,0x40,0x41,0x3F,0x01},
+    {0x7F,0x08,0x14,0x22,0x41},{0x7F,0x40,0x40,0x40,0x40},
+    {0x7F,0x02,0x0C,0x02,0x7F},{0x7F,0x04,0x08,0x10,0x7F},
+    {0x3E,0x41,0x41,0x41,0x3E},{0x7F,0x09,0x09,0x09,0x06},
+    {0x3E,0x41,0x51,0x21,0x5E},{0x7F,0x09,0x19,0x29,0x46},
+    {0x46,0x49,0x49,0x49,0x31},{0x01,0x01,0x7F,0x01,0x01},
+    {0x3F,0x40,0x40,0x40,0x3F},{0x1F,0x20,0x40,0x20,0x1F},
+    {0x7F,0x20,0x18,0x20,0x7F},{0x63,0x14,0x08,0x14,0x63},
+    {0x03,0x04,0x78,0x04,0x03},{0x61,0x51,0x49,0x45,0x43},
+    {0x3E,0x51,0x49,0x45,0x3E},{0x00,0x42,0x7F,0x40,0x00},
+    {0x42,0x61,0x51,0x49,0x46},{0x21,0x41,0x45,0x4B,0x31},
+    {0x18,0x14,0x12,0x7F,0x10},{0x27,0x45,0x45,0x45,0x39},
+    {0x3C,0x4A,0x49,0x49,0x30},{0x01,0x71,0x09,0x05,0x03},
+    {0x36,0x49,0x49,0x49,0x36},{0x06,0x49,0x49,0x29,0x1E},
+    {0x00,0x00,0x00,0x00,0x00},{0x08,0x08,0x08,0x08,0x08},
+    {0x00,0x60,0x60,0x00,0x00},{0x20,0x10,0x08,0x04,0x02},
+    {0x08,0x08,0x3E,0x08,0x08}
+  };
+
+  const int SC=2, CW=5*SC+SC, CH=7*SC, GAP=3;
+  char bl[8], fl[8];
+  getBandLabel(memChan[ch].freq, bl, fl);
+
+  int totalH = CH+GAP+CH;
+  int ty1 = y+(buttonHeight-totalH)/2+1;
+  int ty2 = ty1+CH+GAP;
+
+  // Helper lambda via macro — draw one text line
+  #define DRAW_LINE(str, ty, r, g, b) \
+    { int _l=strlen(str), _tx=x+(buttonWidth-_l*CW)/2; \
+      for(int _ci=0;(str)[_ci];_ci++){ \
+        int _fi=MFI((unsigned char)(str)[_ci]),_cx=_tx+_ci*CW; \
+        for(int _col=0;_col<5;_col++){ \
+          unsigned char _cd=mf[_fi][_col]; \
+          for(int _row=0;_row<7;_row++){ \
+            int _bit=(_cd>>_row)&1,_px=_cx+_col*SC,_py=(ty)+_row*SC; \
+            for(int _sy=0;_sy<SC;_sy++) \
+              drawLine(_px,_py+_sy,_px+SC-1,_py+_sy, \
+                       _bit?(r):bgR,_bit?(g):bgG,_bit?(b):bgB); \
+          } \
+        } \
+        int _gx=_tx+_ci*CW+5*SC; \
+        for(int _sy=0;_sy<CH;_sy++) \
+          drawLine(_gx,ty+_sy,_gx+SC-1,ty+_sy,bgR,bgG,bgB); \
+      } \
+    }
+
+  // Line 1: band — white
+  DRAW_LINE(bl, ty1, txR, txG, txB)
+  // Line 2: freq — cyan (black on BTN_ON)
+  int fR=(state==BTN_ON)?0:0, fG=(state==BTN_ON)?0:200, fB=(state==BTN_ON)?0:220;
+  DRAW_LINE(fl, ty2, fR, fG, fB)
+
+  #undef DRAW_LINE
+  #undef MFI
+}
+
 void displayPopupMem(void)
 {
-  char mstr[7];
   clearPopUp();
   drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_ON);
-  // Button 0: MORE.. (toggle M1-M6 / M7-M12)
+  // Button 0: toggle M1-M6 / M7-M12
   drawButtonIC7300(popupX, popupY, memFirstChan==0 ? "M1-M6" : "M7-12",
                    memFirstChan > 0 ? BTN_ON : BTN_OFF);
-  // Button 1-6: memory channels
+  // Buttons 1-6: 2-line memory buttons
   for(int n=0; n<6; n++)
     {
     int ch = n + memFirstChan;
-    if(memChan[ch].used)
-      {
-      // Show frequency in MHz with 3 decimal places
-      sprintf(mstr,"%.3f", memChan[ch].freq);
-      // Trim to 6 chars max
-      mstr[6]=0;
-      }
-    else
-      {
-      sprintf(mstr,"M%d", ch+1);
-      }
     int mstate = memChan[ch].used ? BTN_OFF : BTN_WARN;
-    drawButtonIC7300(popupX+(n+1)*buttonSpaceX, popupY, mstr, mstate);
+    drawButtonMem2L(popupX+(n+1)*buttonSpaceX, popupY, ch, mstate);
     }
-  // SAVE indicator — cyan when save pending
+  // SAVE mode indicator
   if(memSavePending)
     {
     gotoXY(0, settingY); textSize=2; setForeColour(0,220,255);
