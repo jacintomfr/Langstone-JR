@@ -829,8 +829,12 @@ def docommands(tb):
               if d and a:
                   h_mult = (10.0 ** (-value * 2.0 / 20.0)) if value > 0 else 1.0
                   e_mult = (10.0 ** (-getattr(tb,'_agc_e_scale',0)*2.0/20.0)) if getattr(tb,'_agc_e_scale',0) > 0 else 1.0
-                  tb.analog_agc2_xx_0.set_decay_rate(d * h_mult)
+                  new_decay = d * h_mult
+                  tb.analog_agc2_xx_0.set_decay_rate(new_decay)
                   tb.analog_agc2_xx_0.set_attack_rate(a * e_mult)
+                  print(f"[AGC] h={value} decay={new_decay:.6f} (base={d:.6f} mult={h_mult:.4f})", flush=True)
+              else:
+                  print(f"[AGC] h={value} received but no mode set yet", flush=True)
            if line[0]=='e':
               # AGC attack multiplier: e0=off(original), e10=×0.1, e20=×0.01
               value=int(line[1:])
