@@ -3020,8 +3020,8 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*2,funcButtonsY))  // Button 3 = ATK o
       }
       else if(inputMode==SETTINGS)
       {
-      settingNo=settingNo+1;
-      if(settingNo==numSettings) settingNo=0;
+      settingNo=settingNo-1;
+      if(settingNo<0) settingNo=numSettings-1;
       displaySetting(settingNo);
       return;
       }
@@ -3040,8 +3040,8 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*3,funcButtonsY))    // Button4 =SET o
       }
     else  if (inputMode==SETTINGS)
       {
-      settingNo=settingNo-1;
-      if(settingNo<0) settingNo=numSettings-1;
+      settingNo=settingNo+1;
+      if(settingNo==numSettings) settingNo=0;
       displaySetting(settingNo);
       return;
       }
