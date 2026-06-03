@@ -5037,9 +5037,9 @@ if(se==BAND_BITS_TX)
   else { sprintf(valStr,"x%.2f",(float)pow(10.0,-agcHangScale*2.0/20.0)); displayStr(valStr); }
   }
   if(se==AGC_THRESH)
+  {
   if(agcThreshScale==0) displayStr("OFF");
   else { sprintf(valStr,"x%.2f",(float)pow(10.0,-agcThreshScale*2.0/20.0)); displayStr(valStr); }
-  displayStr(valStr);
   }
   if(se==TX_GAIN)
   {
