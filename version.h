@@ -7,6 +7,6 @@
 //    yyy = development build (auto-incremented by ./build)
 // ══════════════════════════════════════════════════════════════
 #define LANGSTONE_VER_MAJOR  3
-#define LANGSTONE_VER_BUILD  22
-#define LANGSTONE_VERSION    "V03-022"
+#define LANGSTONE_VER_BUILD  23
+#define LANGSTONE_VERSION    "V03-023"
 #endif
