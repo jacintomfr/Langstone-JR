@@ -199,6 +199,7 @@ void initADS1115(void);
 void displayPopupMem(void);
 void saveMemConfig(void);
 void loadMemConfig(void);
+int  memLongPressCheck(void);
 // PWR/SWR globals — written by ADC thread, read by drawPwrSwr()
 static volatile float g_pwr_watts = -1.0f;
 static volatile float g_swr       = -1.0f;
@@ -3060,7 +3061,7 @@ void setFreqInc()
 
 
 // ── memLongPressCheck — called on touch END when MEM popup is open ────────────
-static int memLongPressCheck(void)
+int memLongPressCheck(void)
 {
   if(popupSel != MEM) return 0;
   if(lpTouchX < 0)    return 0;
