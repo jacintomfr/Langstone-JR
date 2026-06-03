@@ -30,13 +30,15 @@ UPGRADE_FILES=(
 )
 BUILD_TARGETS=("GUI_Hack" "GUI_Pluto")
 
-# ── Init log ─────────────────────────────────────────────────────────────────
+# ── Init log — always append, never truncate ─────────────────────────────────
 mkdir -p "$INSTALL_DIR"
 echo "" >> "$LOG"
 echo "════════════════════════════════════════" >> "$LOG"
 echo "Upgrade started: $(date)" >> "$LOG"
-echo "User: $(whoami), PWD: $(pwd)" >> "$LOG"
+echo "Host: $(hostname)  User: $(whoami)" >> "$LOG"
 echo "Script: $0" >> "$LOG"
+LOCAL_VER_INIT=$(grep 'LANGSTONE_VERSION' "$VER_FILE" 2>/dev/null | grep -o '"V[^"]*"' | tr -d '"')
+echo "Current version: ${LOCAL_VER_INIT:-unknown}" >> "$LOG"
 log "Repo: $REPO_URL"
 echo "STARTED" > "$PROGRESS"
 
@@ -196,6 +198,9 @@ BUILD_EXIT=$?
 log "build exit=$BUILD_EXIT"
 log "build output:"
 echo "$BUILD_OUT" >> "$LOG"
+# Log the version that build produced
+VER_AFTER_BUILD=$(grep 'LANGSTONE_VERSION' "$VER_FILE" 2>/dev/null | grep -o '"V[^"]*"' | tr -d '"')
+log "version.h after build: $VER_AFTER_BUILD"
 if [ $BUILD_EXIT -ne 0 ]; then
     err "Build falhou - a restaurar backup"
     log "Build errors: $BUILD_OUT"
