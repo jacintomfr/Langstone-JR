@@ -506,25 +506,17 @@ class Lang_TRX_Hack(gr.top_block):
 
     def agc_hold(self, duration_ms=200):
         # Freeze AGC gain during filter/setting changes to prevent dropout
-        # Saves current gain, sets decay=0 for duration_ms, then restores
-        # NOTE: restores decay with h/e multipliers applied — not raw base value
         import threading, time
         current_gain  = self.analog_agc2_xx_0.get_gain()
         normal_decay  = getattr(self, '_agc_normal_decay', 0.00002)
         normal_attack = getattr(self, '_agc_normal_attack', 0.1)
-        h = getattr(self, '_agc_h_scale', 0)
-        e = getattr(self, '_agc_e_scale', 0)
-        h_mult = (10.0 ** (-h * 2.0 / 20.0)) if h > 0 else 1.0
-        e_mult = (10.0 ** (-e * 2.0 / 20.0)) if e > 0 else 1.0
-        restore_decay  = normal_decay  * h_mult
-        restore_attack = normal_attack * e_mult
         def _hold():
             self.analog_agc2_xx_0.set_decay_rate(0.000001)
             self.analog_agc2_xx_0.set_attack_rate(0.000001)
             self.analog_agc2_xx_0.set_gain(current_gain)
             time.sleep(duration_ms / 1000.0)
-            self.analog_agc2_xx_0.set_attack_rate(restore_attack)
-            self.analog_agc2_xx_0.set_decay_rate(restore_decay)
+            self.analog_agc2_xx_0.set_attack_rate(normal_attack)
+            self.analog_agc2_xx_0.set_decay_rate(normal_decay)
         threading.Thread(target=_hold, daemon=True).start()
 
     def set_AGC_Level(self, level_db):
@@ -550,25 +542,19 @@ class Lang_TRX_Hack(gr.top_block):
     def set_AGC_Params(self, attack, decay):
         # AGC2 mode control (J command)
         # agc2_ff uses LOOP GAIN semantics (not 1/τ like agc3_cc)
-        # h=0 and e=0 → no change to original mode values (safe default)
-        # h/e log scale: mult = 10^(-scale × 2/20)
-        #   h=0 → ×1.0 (original), h=10 → ×0.1, h=20 → ×0.01 (100× slower)
+        # Correct scale: 0.02-0.2 for attack, 0.0002-0.01 for decay
         if attack == 0 and decay == 0:
-            # OFF: unity gain
+            # OFF: unity gain — AGC loop frozen at gain=1.0, no amplitude change
             self.analog_agc2_xx_0.set_max_gain(1.0)
             self.analog_agc2_xx_0.set_gain(1.0)
             self.analog_agc2_xx_0.set_reference(1.0)
         else:
             self._agc_normal_attack = attack
             self._agc_normal_decay  = decay
-            h = getattr(self, '_agc_h_scale', 0)
-            e = getattr(self, '_agc_e_scale', 0)
-            h_mult = (10.0 ** (-h * 2.0 / 20.0)) if h > 0 else 1.0
-            e_mult = (10.0 ** (-e * 2.0 / 20.0)) if e > 0 else 1.0
             self.analog_agc2_xx_0.set_max_gain(20)
             self.analog_agc2_xx_0.set_reference(0.3)
-            self.analog_agc2_xx_0.set_attack_rate(attack * e_mult)
-            self.analog_agc2_xx_0.set_decay_rate(decay * h_mult)
+            self.analog_agc2_xx_0.set_attack_rate(attack)
+            self.analog_agc2_xx_0.set_decay_rate(decay)
 
     def get_Rx_Filt_Low(self):
         return self.Rx_Filt_Low
@@ -824,38 +810,6 @@ def docommands(tb):
               # AGC level adjust: Y<dB> e.g. Y0, Y-10, Y+10
               value=int(line[1:])
               tb.set_AGC_Level(value)
-           if line[0]=='h':
-              # AGC decay multiplier: h0=off(original), h10=×0.1, h20=×0.01
-              value=int(line[1:])
-              if value <  0: value =  0
-              if value > 20: value = 20
-              tb._agc_h_scale = value
-              d = getattr(tb, '_agc_normal_decay',  None)
-              a = getattr(tb, '_agc_normal_attack', None)
-              if d and a:
-                  h_mult = (10.0 ** (-value * 2.0 / 20.0)) if value > 0 else 1.0
-                  e_mult = (10.0 ** (-getattr(tb,'_agc_e_scale',0)*2.0/20.0)) if getattr(tb,'_agc_e_scale',0) > 0 else 1.0
-                  new_decay = d * h_mult
-                  tb.analog_agc2_xx_0.set_decay_rate(new_decay)
-                  tb.analog_agc2_xx_0.set_attack_rate(a * e_mult)
-                  print(f"[AGC] h={value} decay={new_decay:.6f} (base={d:.6f} mult={h_mult:.4f})", flush=True)
-              else:
-                  print(f"[AGC] h={value} received but no mode set yet", flush=True)
-           if line[0]=='e':
-              # AGC attack multiplier: e0=off(original), e10=×0.1, e20=×0.01
-              value=int(line[1:])
-              if value <  0: value =  0
-              if value > 20: value = 20
-              tb._agc_e_scale = value
-              d = getattr(tb, '_agc_normal_decay',  None)
-              a = getattr(tb, '_agc_normal_attack', None)
-              if d and a:
-                  h_mult = (10.0 ** (-getattr(tb,'_agc_h_scale',0)*2.0/20.0)) if getattr(tb,'_agc_h_scale',0) > 0 else 1.0
-                  e_mult = (10.0 ** (-value * 2.0 / 20.0)) if value > 0 else 1.0
-                  tb.analog_agc2_xx_0.set_decay_rate(d * h_mult)
-                  tb.analog_agc2_xx_0.set_attack_rate(a * e_mult)
-           if line[0]=='J':
-              # AGC mode: J0=OFF J1=FAST J2=MED J3=SLOW J4=LONG
               value=int(line[1:])
               # agc2_ff loop gain params (NOT agc3 rate params)
               params = [

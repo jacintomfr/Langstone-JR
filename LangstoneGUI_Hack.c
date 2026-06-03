@@ -196,6 +196,9 @@ void doGitUpgrade(void);
 void drawCallsignDisplay(void);
 void drawPwrSwr(void);
 void initADS1115(void);
+void displayPopupMem(void);
+void saveMemConfig(void);
+void loadMemConfig(void);
 // PWR/SWR globals — written by ADC thread, read by drawPwrSwr()
 static volatile float g_pwr_watts = -1.0f;
 static volatile float g_swr       = -1.0f;
@@ -245,10 +248,10 @@ int lastmode=0;
 char * modename[nummode]={"USB","LSB","CW ","CWN","FM ","AM "};
 enum {USB,LSB,CW,CWN,FM,AM};
 
-#define numSettings 35
+#define numSettings 33
 
-char * settingText[numSettings]={"RX GAIN= ","RX BASEBAND= ","RX AMP= ","TX AMP= ","TX GAIN= ","AGC ADJ= ","AGC HANG TIME= ","AGC THRESHOLD= ","S-METER ZERO= ","FFT REF= ","WF LEVEL= ","SPEC STRETCH= ","SSB MIC GAIN= ","FM MIC GAIN= ","AM MIC GAIN= ","SSB RX FILTER HIGH= ","SSB RX FILTER LOW= ","SSB GAIN EQ-H= ","SSB GAIN EQ-M2= ","SSB GAIN EQ-M1= ","SSB GAIN EQ-L= "," RX OFFSET= ","RX HARMONIC MIXING= "," TX OFFSET= ","TX HARMONIC MIXING= ","REPEATER SHIFT= ","CTCSS= ","BAND BITS (RX)= ","BAND BITS (TX)= ","24 BANDS= ","CW IDENT= ","CALL ID= ","CWID CARRIER= ","CW BREAK-IN HANG TIME= ","ROTATE SCREEN = "};
-enum {RX_GAIN,RX_BASE,RX_AMP,TX_AMP,TX_GAIN,AGC_ADJ,AGC_HANG,AGC_THRESH,S_ZERO,FFT_REF,WF_FLOOR,SPEC_STRETCH,SSB_MIC,FM_MIC,AM_MIC,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
+char * settingText[numSettings]={"RX GAIN= ","RX BASEBAND= ","RX AMP= ","TX AMP= ","TX GAIN= ","AGC ADJ= ","S-METER ZERO= ","FFT REF= ","WF LEVEL= ","SPEC STRETCH= ","SSB MIC GAIN= ","FM MIC GAIN= ","AM MIC GAIN= ","SSB RX FILTER HIGH= ","SSB RX FILTER LOW= ","SSB GAIN EQ-H= ","SSB GAIN EQ-M2= ","SSB GAIN EQ-M1= ","SSB GAIN EQ-L= "," RX OFFSET= ","RX HARMONIC MIXING= "," TX OFFSET= ","TX HARMONIC MIXING= ","REPEATER SHIFT= ","CTCSS= ","BAND BITS (RX)= ","BAND BITS (TX)= ","24 BANDS= ","CW IDENT= ","CALL ID= ","CWID CARRIER= ","CW BREAK-IN HANG TIME= ","ROTATE SCREEN = "};
+enum {RX_GAIN,RX_BASE,RX_AMP,TX_AMP,TX_GAIN,AGC_ADJ,S_ZERO,FFT_REF,WF_FLOOR,SPEC_STRETCH,SSB_MIC,FM_MIC,AM_MIC,SSB_FILT_HIGH,SSB_FILT_LOW,SSB_GEQH,SSB_GEQM2,SSB_GEQM1,SSB_GEQL,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,REP_SHIFT,CTCSS,BAND_BITS_RX,BAND_BITS_TX,BANDS24,CWID,CALLSIGN,CW_CARRIER,BREAK_IN_TIME,ROTATE};
 
 int settingNo=RX_GAIN;
 int setIndex=0;
@@ -389,7 +392,17 @@ int portsdownPresent;
 
 int popupSel=0;
 int popupFirstBand;
-enum {NONE,MODE,BAND,BEACON};
+
+// ── Memory channels ──────────────────────────────────────────────────────────
+// 12 memory channels — store freq (MHz) + mode + label
+// Accessed via MEM button popup (same philosophy as BAND)
+// Toque M1-M6/M7-M12 = recall; toque SAVE = store current freq+mode
+#define NUM_MEM 12
+typedef struct { double freq; int mode; char label[7]; int used; } MemChan;
+MemChan memChan[NUM_MEM] = {0};
+int memFirstChan = 0;   // 0 = M1-M6, 6 = M7-M12
+int memSavePending = 0; // 1 = next mem touch stores instead of recalls
+enum {NONE,MODE,BAND,BEACON,MEM};
 
 #define pttPin 17       // Physical pin is 11
 #define keyPin 18       // Physical pin is 12
@@ -423,11 +436,6 @@ int  callSignLen  = 5;               // number of active chars in callSign     /
 int bandAGCAdj[numband]={0};     // AGC level adjust per band
 #define AGCAdj bandAGCAdj[band]
 int AGCAdjByMode[6] = {0,0,0,0,0,0};  // AGC level memory per mode (USB,LSB,CW,CWN,FM,AM)
-// AGC hang and threshold — user calibration via SET menu
-// agcHangScale: 0-20 → decay multiplier log scale. 0=original, 20=100× slower decay
-// agcThreshScale: 0-20 → attack multiplier log scale. 0=original, 20=100× slower attack
-int agcHangScale   = 0;
-int agcThreshScale = 0;
 float wf_low_smooth = -999.0f; // IIR smoothed noise floor for auto waterfall (-999=uninitialised)
 int smNeedsFullRedraw = 0;     // set by P_Meter on last TX frame to force S_Meter full redraw
 int pmNeedsReset = 0;          // set on TX start to reset P_Meter statics
@@ -2263,7 +2271,7 @@ void doGitUpgrade(void)
     }
 
   remove(PROGRESS_FILE);
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
 }
 
 void drawButtonIC7300(int x, int y, const char *label, int state)
@@ -2574,12 +2582,11 @@ void initSDR(void)
   char agcStr[4];
   sprintf(agcStr, "J%d", agcMode);
   sendFifo(agcStr);
-  // Restore AGC hang and threshold to Python flowgraph
-  { char hs[8]; sprintf(hs,"h%d",agcHangScale);  sendFifo(hs); }
-  { char ts[8]; sprintf(ts,"e%d",agcThreshScale); sendFifo(ts); }
   // Init ADS1115 I²C ADC for PWR/SWR
   initADS1115();
   { pthread_t _at; pthread_create(&_at,NULL,adcThread,NULL); pthread_detach(_at); }
+  // Load memory channels
+  loadMemConfig();
 }
 
 void displayMenu()
@@ -2612,8 +2619,9 @@ void displayMenu()
   // SET
   drawButtonIC7300(funcButtonsX+buttonSpaceX*3, funcButtonsY, "SET",    BTN_WARN);
 
-  // Button 5 — SNAP (AGC moved above SQL button)
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
+  // Button 5 — MEM (replaces SNAP — SNAP now via SET menu Button 4 in SETTINGS mode)
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM",
+                   (popupSel==MEM) ? BTN_ON : BTN_OFF);
 
   // BEACON / CWID / DOTS
   if(sendBeacon > 0)
@@ -2680,6 +2688,69 @@ void displayPopupBeacon(void)
   popupSel=BEACON;
 }
 
+void displayPopupMem(void)
+{
+  char mstr[7];
+  clearPopUp();
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_ON);
+  // Button 0: MORE.. (toggle M1-M6 / M7-M12)
+  drawButtonIC7300(popupX, popupY, memFirstChan==0 ? "M1-M6" : "M7-12",
+                   memFirstChan > 0 ? BTN_ON : BTN_OFF);
+  // Button 1-6: memory channels
+  for(int n=0; n<6; n++)
+    {
+    int ch = n + memFirstChan;
+    if(memChan[ch].used)
+      {
+      // Show frequency in MHz with 3 decimal places
+      sprintf(mstr,"%.3f", memChan[ch].freq);
+      // Trim to 6 chars max
+      mstr[6]=0;
+      }
+    else
+      {
+      sprintf(mstr,"M%d", ch+1);
+      }
+    int mstate = memChan[ch].used ? BTN_OFF : BTN_WARN;
+    drawButtonIC7300(popupX+(n+1)*buttonSpaceX, popupY, mstr, mstate);
+    }
+  // SAVE indicator — cyan when save pending
+  if(memSavePending)
+    {
+    gotoXY(0, settingY); textSize=2; setForeColour(0,220,255);
+    displayStr("Touch memory to SAVE current freq+mode ");
+    textSize=1;
+    }
+  popupSel=MEM;
+}
+
+void saveMemConfig(void)
+{
+  FILE *f = fopen("/home/pi/Langstone/Langstone_Mem.conf","w");
+  if(!f) return;
+  for(int i=0; i<NUM_MEM; i++)
+    fprintf(f,"mem%02d %.6f %d %d %s\n", i,
+            memChan[i].freq, memChan[i].mode, memChan[i].used,
+            memChan[i].used ? memChan[i].label : "----");
+  fclose(f);
+}
+
+void loadMemConfig(void)
+{
+  FILE *f = fopen("/home/pi/Langstone/Langstone_Mem.conf","r");
+  if(!f) return;
+  int i; double fr; int mo, us; char lb[7];
+  while(fscanf(f,"mem%d %lf %d %d %6s\n",&i,&fr,&mo,&us,lb)==5)
+    {
+    if(i>=0 && i<NUM_MEM)
+      {
+      memChan[i].freq=fr; memChan[i].mode=mo; memChan[i].used=us;
+      strncpy(memChan[i].label,lb,6); memChan[i].label[6]=0;
+      }
+    }
+  fclose(f);
+}
+
 
 void clearPopUp(void)
 {
@@ -2691,6 +2762,7 @@ for(int py=popupY;py<popupY+buttonHeight+1;py++)
   }
 }
 popupSel=NONE;
+memSavePending=0;
 displayMenu();
 }
 
@@ -3052,30 +3124,37 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*3,funcButtonsY))    // Button4 =SET o
       }
     }
        
-if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = SNAP (FREQ) / UPGRADE (SETTINGS)
+if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = MEM (FREQ) / SNAP+UPGRADE (SETTINGS)
     {
     if(inputMode==SETTINGS)
       {
-      // ── GitHub Upgrade — two-touch safety ────────────────────
-      if(upgradeConfirm == 0)
+      // SETTINGS mode: Button 4 = SNAP first press, UPGRADE on second press
+      // upgradeConfirm: 0=idle, 1=snap done/waiting upgrade confirm
+      if(upgradeConfirm == 1)
         {
-        upgradeConfirm = 1;
-        drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "YES", BTN_WARN);
-        // Show at settingY — not errorY (inside waterfall)
-        gotoXY(0, settingY); textSize=2; setForeColour(255,50,50);
-        displayStr("Touch UPGRDE again to confirm    ");
+        upgradeConfirm = 0;
+        doGitUpgrade();
         return;
         }
-      upgradeConfirm = 0;
-      doGitUpgrade();
+      // First press: take snapshot and arm upgrade confirm
+      takeSnapshot();
+      upgradeConfirm = 1;
+      drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_WARN);
+      gotoXY(0, settingY); textSize=2; setForeColour(255,50,50);
+      displayStr("Touch SNAP again to UPGRADE     ");
+      textSize=1;
       return;
       }
     else
       {
-      takeSnapshot();
+      // FREQ mode: open/close MEM popup
+      if(popupSel==MEM) { memSavePending=0; clearPopUp(); return; }
+      memSavePending=0;
+      displayPopupMem();
       return;
       }
-    }      
+    }
+
 
 if(buttonTouched(funcButtonsX+buttonSpaceX*5,funcButtonsY))    //Button 6 = BEACON  or Exit to Portsdown
     {
@@ -3230,6 +3309,61 @@ if(popupSel==BEACON)
       setBeacon(1);
       clearPopUp();
       }     
+  }
+
+if(popupSel==MEM)
+  {
+  // Button 0: MORE — toggle M1-M6 / M7-M12
+  if(buttonTouched(popupX, popupY))
+    {
+    memFirstChan = (memFirstChan==0) ? 6 : 0;
+    displayPopupMem();
+    return;
+    }
+  // Buttons 1-6: memory channels
+  for(int n=0; n<6; n++)
+    {
+    if(buttonTouched(popupX+(n+1)*buttonSpaceX, popupY))
+      {
+      int ch = n + memFirstChan;
+      if(memSavePending)
+        {
+        // SAVE current freq+mode to this channel
+        memChan[ch].freq = freq;
+        memChan[ch].mode = mode;
+        memChan[ch].used = 1;
+        // Label = frequency string
+        sprintf(memChan[ch].label,"%.3f", freq);
+        memChan[ch].label[6]=0;
+        memSavePending=0;
+        saveMemConfig();
+        clearPopUp();
+        // Show confirmation
+        gotoXY(0, settingY); textSize=2; setForeColour(0,220,0);
+        displayStr("Memory saved                    ");
+        textSize=1;
+        }
+      else
+        {
+        // RECALL — load freq+mode from this channel
+        if(memChan[ch].used)
+          {
+          freq = memChan[ch].freq;
+          mode = memChan[ch].mode;
+          setMode(mode);
+          setFreq(freq);
+          clearPopUp();
+          }
+        else
+          {
+          // Empty channel — enter save mode
+          memSavePending=1;
+          displayPopupMem();
+          }
+        }
+      return;
+      }
+    }
   }
 
 
@@ -4637,26 +4771,6 @@ if(settingNo==BAND_BITS_TX)        // Band Bits Tx
       displaySetting(settingNo);
       }
 
-  if(settingNo==AGC_HANG)
-      {
-      agcHangScale=agcHangScale+mouseScroll;
-      mouseScroll=0;
-      if(agcHangScale <  0) agcHangScale= 0;
-      if(agcHangScale > 20) agcHangScale=20;
-      { char hs[8]; sprintf(hs,"h%d",agcHangScale); sendFifo(hs); }
-      displaySetting(settingNo);
-      }
-
-  if(settingNo==AGC_THRESH)
-      {
-      agcThreshScale=agcThreshScale+mouseScroll;
-      mouseScroll=0;
-      if(agcThreshScale <  1) agcThreshScale= 1;
-      if(agcThreshScale > 20) agcThreshScale=20;
-      { char ts[8]; sprintf(ts,"e%d",agcThreshScale); sendFifo(ts); }
-      displaySetting(settingNo);
-      }
-
   if(settingNo==SPEC_STRETCH)      // Spectrum stretch
       {
       specStretch = specStretch + mouseScroll;
@@ -4719,7 +4833,7 @@ void takeSnapshot(void)
   const int W = 800, H = 480, BPP = 4;
 
   // Flash SNAP button — give display time to flush before capturing fb0
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_ON);
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_ON);
   usleep(150000);  // 150ms — enough for LCD controller to render the button
 
   // Create snap directory if it does not exist
@@ -4730,7 +4844,7 @@ void takeSnapshot(void)
   if(!fb)
     {
     displayError("  SNAP: cannot open fb0  ");
-    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_OFF);
     return;
     }
   unsigned char *fbuf = (unsigned char*)malloc(W * H * BPP);
@@ -4800,7 +4914,7 @@ void takeSnapshot(void)
     {
     free(comp);
     displayError("  SNAP: write failed  ");
-    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_OFF);
     return;
     }
 
@@ -4840,7 +4954,7 @@ void takeSnapshot(void)
   displayStr(snapMsg);
   }
 
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_OFF);
 }
 
 void showSettingsMenu(void)
@@ -4849,7 +4963,7 @@ void showSettingsMenu(void)
     drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "MODE",   BTN_OFF);
     drawButtonIC7300(funcButtonsX+buttonSpaceX*2, funcButtonsY, "PREV", BTN_OFF);
     drawButtonIC7300(funcButtonsX+buttonSpaceX*3, funcButtonsY, "NEXT", BTN_OFF);
-    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
     if(portsdownPresent==1)
       {
       drawButtonIC7300(funcButtonsX+buttonSpaceX*5, funcButtonsY, "EXIT",   BTN_DANGER);
@@ -5030,16 +5144,6 @@ if(se==BAND_BITS_TX)
   {
   sprintf(valStr,"%+d dB",AGCAdj);
   displayStr(valStr);
-  }
-  if(se==AGC_HANG)
-  {
-  if(agcHangScale==0) displayStr("OFF");
-  else { sprintf(valStr,"x%.2f",(float)pow(10.0,-agcHangScale*2.0/20.0)); displayStr(valStr); }
-  }
-  if(se==AGC_THRESH)
-  {
-  if(agcThreshScale==0) displayStr("OFF");
-  else { sprintf(valStr,"x%.2f",(float)pow(10.0,-agcThreshScale*2.0/20.0)); displayStr(valStr); }
   }
   if(se==TX_GAIN)
   {
@@ -5305,8 +5409,6 @@ while(fscanf(conffile,"%49s %99s [^\n]\n",variable,value) !=EOF)
     }
     if(strstr(variable,"AGCAdjMode"))   sscanf(value,"%d %d %d %d %d %d",&AGCAdjByMode[0],&AGCAdjByMode[1],&AGCAdjByMode[2],&AGCAdjByMode[3],&AGCAdjByMode[4],&AGCAdjByMode[5]);
     if(strstr(variable,"specStretch"))  sscanf(value,"%d",&specStretch);
-    if(strstr(variable,"agcHangScale"))  sscanf(value,"%d",&agcHangScale);
-    if(strstr(variable,"agcThreshScale")) sscanf(value,"%d",&agcThreshScale);
     if(strstr(variable,"callSign"))     { strncpy(callSign,value,11); callSign[11]=0; }
     if(strstr(variable,"tuneDigit")) sscanf(value,"%d",&tuneDigit);   
     if(strstr(variable,"mode")) sscanf(value,"%d",&mode);
@@ -5408,8 +5510,6 @@ fprintf(conffile,"agcMode %d\n",agcMode);
     fprintf(conffile,"bandSpecStretch%02d %d\n",_b,bandSpecStretch[_b]);
 fprintf(conffile,"AGCAdjMode %d %d %d %d %d %d\n",AGCAdjByMode[0],AGCAdjByMode[1],AGCAdjByMode[2],AGCAdjByMode[3],AGCAdjByMode[4],AGCAdjByMode[5]);
 fprintf(conffile,"callSign %s\n",callSign);
-fprintf(conffile,"agcHangScale %d\n",agcHangScale);
-fprintf(conffile,"agcThreshScale %d\n",agcThreshScale);
 
 fclose(conffile);
 return 0;
