@@ -507,18 +507,24 @@ class Lang_TRX_Hack(gr.top_block):
     def agc_hold(self, duration_ms=200):
         # Freeze AGC gain during filter/setting changes to prevent dropout
         # Saves current gain, sets decay=0 for duration_ms, then restores
+        # NOTE: restores decay with h/e multipliers applied — not raw base value
         import threading, time
         current_gain  = self.analog_agc2_xx_0.get_gain()
         normal_decay  = getattr(self, '_agc_normal_decay', 0.00002)
+        normal_attack = getattr(self, '_agc_normal_attack', 0.1)
+        h = getattr(self, '_agc_h_scale', 0)
+        e = getattr(self, '_agc_e_scale', 0)
+        h_mult = (10.0 ** (-h * 2.0 / 20.0)) if h > 0 else 1.0
+        e_mult = (10.0 ** (-e * 2.0 / 20.0)) if e > 0 else 1.0
+        restore_decay  = normal_decay  * h_mult
+        restore_attack = normal_attack * e_mult
         def _hold():
-            # Freeze: set decay near-zero so gain doesn't change during transient
             self.analog_agc2_xx_0.set_decay_rate(0.000001)
             self.analog_agc2_xx_0.set_attack_rate(0.000001)
             self.analog_agc2_xx_0.set_gain(current_gain)
             time.sleep(duration_ms / 1000.0)
-            # Restore normal AGC behaviour
-            self.analog_agc2_xx_0.set_attack_rate(getattr(self, '_agc_normal_attack', 0.1))
-            self.analog_agc2_xx_0.set_decay_rate(normal_decay)
+            self.analog_agc2_xx_0.set_attack_rate(restore_attack)
+            self.analog_agc2_xx_0.set_decay_rate(restore_decay)
         threading.Thread(target=_hold, daemon=True).start()
 
     def set_AGC_Level(self, level_db):
