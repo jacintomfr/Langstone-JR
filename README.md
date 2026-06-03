@@ -36,8 +36,8 @@ The RPi5 and HackRF One support was already established in the upstream project 
 - **AGC optimisation** — tuned automatic gain control parameters for improved receive dynamic range and audio consistency
 - **TX audio equalizer** — added TX equalizer stage in the GNURadio flowgraph for better microphone frequency response shaping
 - **CPU optimisation for RPi5** — processing pipeline tuned to reduce CPU load and improve responsiveness on the RPi5
-- **Snap package support** — added snap-based distribution for easier deployment
-- **Auto-update mechanism** — automatic update routine built into the run scripts
+- **Screenshot function** — added SNAP button to capture the current screen directly from the UI
+- **Auto-update mechanism** — automatic update routine triggered via a dedicated button in the UI
 
 All original authorship and copyright of the upstream code belongs to Colin Durbridge G4EML and contributors.
 Modifications in this repository are Copyright © 2024–2025 Jacinto Rebelo — CU2ED.
