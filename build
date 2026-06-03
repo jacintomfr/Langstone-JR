@@ -23,7 +23,7 @@ fi
 
 # ── Compile ───────────────────────────────────────────────────────────────────
 cc $DIR/LangstoneGUI_Pluto.c -o $DIR/GUI_Pluto -liio -llgpio -lz -lm
-cc $DIR/LangstoneGUI_Hack.c  -o $DIR/GUI_Hack  -llgpio -lz -lm
+cc $DIR/LangstoneGUI_Hack.c  -o $DIR/GUI_Hack  -llgpio -lz -lm -lpthread
 cc $DIR/LangstoneGUI_Lime.c  -o $DIR/GUI_Lime  -llgpio 2>/dev/null || true
 cc $DIR/HW_Test.c             -o $DIR/HW_Test   -llgpio
 cc $DIR/Pluto_Test.c          -o $DIR/Pluto_Test -liio
