@@ -1,126 +1,121 @@
-# Langstone-JR
+# Langstone-JR version based on Langstone-V3 SDR Transceiver by Colin Durbridge G4EML
 
-**Langstone SDR Transceiver — adapted for Raspberry Pi 5 + HackRF One**
+# Currently supports only the HackRF One, the Raspberry Pi 5 and the official 7" V1 LCD Displays.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Platform: RPi5](https://img.shields.io/badge/Platform-Raspberry%20Pi%205-c51a4a)](https://www.raspberrypi.com/)
-[![Hardware: HackRF One](https://img.shields.io/badge/Hardware-HackRF%20One-green)](https://greatscottgadgets.com/hackrf/)
-
----
-
-## About
-
-Langstone-JR is a fork and adaptation of the original **Langstone V3 SDR Transceiver** project by **Colin Durbridge G4EML**, ported and extended to run on the **Raspberry Pi 5** with the **HackRF One** SDR module.
-
-![Langstone-JR Screenshot](Langstone-JR.png)
-
-This is an experimental project to produce a simple VHF, UHF and Microwave SDR Transceiver operating on SSB, CW and FM modes, using a touchscreen interface and mouse-wheel tuning.
+This is an experimental project to produce a simple VHF, UHF and Microwave SDR Transceiver operating on SSB CW and FM.
 
 It was inspired by the very successful Portsdown Amateur Television system created by the British Amateur Television Club.
 
-More information about the original Langstone project can be found on the UK Microwave group wiki:
-**<https://wiki.microwavers.org.uk/Langstone_Project>**
+To install the software on a raspberry pi please follow the instructions further down the page. 
 
----
+**More information can also be found on the UK Microwave group wiki at https://wiki.microwavers.org.uk/Langstone_Project**
 
-## Origin and Authorship
+Currently only the following hardware is supported:-
 
-> This repository is a **personal fork** of [Langstone V3](https://github.com/G4EML/Langstone) by Colin Durbridge G4EML, originally licensed under GPL-3.0.
+- Raspberry Pi 5 (Pi 4 is not officially supported but is reported to work OK with the Pluto. Not with the HackRF)
 
-The RPi5 and HackRF One support was already established in the upstream project by G4EML. This fork takes that as a starting point and applies a set of personal ideas, UI improvements and hardware additions by **Jacinto Rebelo — CU2ED** (Azores, Portugal):
+- Official Original Raspberry Pi 7" 800 x 480 Version 1 touchscreen. 
 
-- **Redesigned screen layout** — reorganised UI panels and controls to better suit the 7" touchscreen form factor
-- **Enhanced on-screen information** — additional data displayed in real time (frequency, mode, signal info)
-- **Waterfall and spectrum improvements** — modified colour palette, scaling and layout for better readability
-- **I²C power and SWR meter** — hardware integration of an external I²C meter for real-time TX monitoring
-- **AGC optimisation** — tuned automatic gain control parameters for improved receive dynamic range and audio consistency
-- **TX audio equalizer** — added TX equalizer stage in the GNURadio flowgraph for better microphone frequency response shaping
-- **CPU optimisation for RPi5** — processing pipeline tuned to reduce CPU load and improve responsiveness on the RPi5
-- **Screenshot function** — added SNAP button to capture the current screen directly from the UI
-- **Auto-update mechanism** — automatic update routine triggered via a dedicated button in the UI
+- RPi5 to Touchscreen flat cable. (this may need to be purchased seperately as the cable supplied with the V1 Touch Screen is not suitable)
 
-All original authorship and copyright of the upstream code belongs to Colin Durbridge G4EML and contributors.
-Modifications in this repository are Copyright © 2024–2025 Jacinto Rebelo — CU2ED.
+- Adalm Pluto or HackRF One SDR Modules. 
 
----
+- USB Audio module. Connected to loudspeaker or headphones and microphone. Devices using the CM108 Chip can also use the Volume Down button as a PTT input. 
+ 
+- USB Scroll mouse
+ 
+- PTT via Raspberry Pi GPIO 17 (pin 11). This needs a pull up resistor to 3.3V. Grounding this pin will switch to Transmit.
 
-## Hardware Requirements
+- CW Key is via Raspberry Pi GPIO 18 (pin 12). This needs a pull up resistor to 3.3V. Grounding this pin will key the transmitter. 
 
-- **Raspberry Pi 5** (RPi4 reportedly works with Pluto only, not HackRF)
-- Official Raspberry Pi **7" 800×480 Version 1** touchscreen
-- RPi5-to-touchscreen flat cable *(may need separate purchase)*
-- **HackRF One** SDR module
-- USB audio module (CM108-based recommended — Volume Down button can act as PTT)
-- USB scroll mouse
-- PTT via GPIO 17 (pin 11) — needs pull-up to 3.3V; ground to TX
-- CW key via GPIO 18 (pin 12) — needs pull-up to 3.3V; ground to key
-- TX output on GPIO 21 (pin 40) — goes high when transmitting (100ms sequencing delay)
-- 8× Band select outputs on GPIO 1, 19, 4, 25, 22, 24, 10, 9
+- Tx Output is via Raspberry Pi GPIO 21 (pin 40). This output goes high when the Langstone is transmitting. This can be used to switch antenna relays and amplifiers. (100ms delay included for sequencing)
 
----
+- 8 Band select Outputs on GPIO 1 (pin 28), GPIO 19 (pin 35), GPIO 4 (pin 7), GPIO 25 (pin 22), GPIO 22 (pin 16), GPIO 24 (pin 18), GPIO 10 (pin 19), and GPIO 9 (Pin 21). These can be used to select external filters, amplifiers or Transverters. The state of these outputs is defined using the Band Bits setting. 
 
-## Installation (HackRF One)
+- On the Adalm Pluto the TX output and first three of the Band Select outputs are also available on the Internal Pluto GPO connector. GPO0 is the Tx Output, GPO1-3 are the Band Select outputs.The main use for these is for when the Pluto is remotely mounted. Care must be taken as these pins are low voltage. They will need to be buffered before use. 
 
-SSH into your Raspberry Pi (user: `pi`, password: `raspberry`) and run:
+To build a complete functional transceiver you will need to add suitable filters, preamplifiers and power amplifiers to the SDR Module. 
 
-```bash
+All control is done using the touchscreen and mouse.
+
+Tuning uses the mouse scrollwheel. The mouse left and right buttons select the tuning step. The centre button is used for the CW key.  Mouse movement is not used.
+
+A mouse is used to provide the tuning input because it effectively hands the task of monitoring the tuning knob to a seperate processor (in the mouse). Rotary encoders can be tricky to handle reliably in linux. 
+
+It is easy to modify a cheap mouse by disconnecting the existing switches and wiring the PCB to larger switches on the Langstone front panel. The scroll wheel can likewise be replaced with a panel mounted tuning knob. 
+
+Microphone input and headphone output uses the USB audio device. (a couple of pounds on Ebay)
+
+The software consists of two parts. The SDR itself uses a python GNURadio Flowgraph (Lang_TRX_Pluto.py or Lang_TRX_Hack.py) which can be created on a PC running GNUradio companion with Lang_TRX_Pluto.grc or Lang_TRX_Hack.grc. This Python program is then manually edited by adding the code from ControlTRX_Pluto.py or ControlTRX_HAck.py so it can be controlled by the GUI part of the software (LangstoneGUI_Pluto.c or LangstoneGui_Hack.c). These are written in C and communicate with GNURadio using a Linux Pipe. However to build and use a Langstone transceiver you do not need to know this!
+
+
+
+# Installation for Langstone Transceiver
+
+The preferred installation method only needs a Windows PC connected to the same (internet-connected) network as your Raspberry Pi.  Do not connect a keyboard or HDMI display directly to your Raspberry Pi.
+
+- Download and install the Raspberry Pi Imager utility from https://downloads.raspberrypi.org/imager/imager_latest.exe
+ 
+- These instructions are based on verdsion 2.0.6 of the Imager program. Other versions may differ but you should try to acheive the same settings. 
+
+- Start the Imager Utility, Select 'Raspberry Pi 5' as the Raspberry Pi Device.
+
+-  Select 'Raspberry Pi OS (Other)' then 'Raspberry Pi OS Lite (64 Bit)' as the operating system.
+
+- **Note... It is important to check that you have selected the Lite version of the OS and not the Full version.** 
+
+- Insert your micro SD card into a card reader and select that device for the Storage.  Note:- Ignore and close any message boxes about reformatting the drive. This is not needed. 
+
+- When asked to choose a Hostname, you can choose anything you like or leave it at the Suggested Name.
+
+- Set Your City, TimeZone and keyboard layout. You can normally accept the default settings.
+
+- Set the username to 'pi' and the password to 'raspberry'
+
+- Leave the WIFI settings Blank
+ 
+- Selact 'Enable SSH' and 'Use Password authentication'
+
+- Disable Raspberry Pi Connect
+
+- Finally Click 'WRITE' to start writing the SD card.
+
+- Make sure you use a good quality class 10 Micro-SD Card. (16GB is OK) The performance of the Raspberry Pi can be badly affected by poor quality cards. 
+
+- Connect the touchscreen display, USB mouse, USB Sound Card, and SDR Module.   Power up the RPi with the new card inserted, and a network connection.  Do not connect a keyboard or HDMI display to the Raspberry Pi.
+
+- The Raspberry Pi may restart several times as it configures the SD card. Eventually it should display a full boot on the LCD. 
+
+- Find the IP address of your Raspberry Pi by looking at your internet router or by using an IP Scanner (such as Advanced IP Scanner http://filehippo.com/download_advanced_ip_scanner/ for Windows, or Fing on an iPhone) to get the RPi's IP address 
+
+- From your windows PC use Putty (http://www.chiark.greenend.org.uk/~sgtatham/putty/download.html) to open an SSH login to the IP address that you noted earlier.  You will get a Security warning the first time you try; this is normal.
+
+- Log in (user: pi, password: raspberry) then cut and paste the following code in, one line at a time:
+
+
+## For the HackRF One
+```sh
 wget https://raw.githubusercontent.com/jacintomfr/Langstone-JR/master/installHack.sh
 chmod +x installHack.sh
 ./installHack.sh
 ```
 
-The build process is fully automated and takes several minutes. The Pi will reboot when complete and start Langstone automatically.
+The initial build can take some time, however it does not need any user input, so go and make a cup of coffee and keep an eye on the touchscreen.  When the build is finished the Pi will reboot and should start-up with the Langstone Transceiver. Occasionally a second reboot may be required. If after this it still does not appear to be working then see the Langstone wiki for some things to look at.
 
-> **Note:** Use **Raspberry Pi OS Lite (64-bit)**. The full desktop version is not supported.
+# Updating the Software. 
 
----
+If you have a running Langstone-JR you can update by doing the following. 
 
-## Updating
+Log into the Pi using SSH as described above. 
 
-If you already have Langstone-JR installed:
-
-```bash
 cd Langstone
+
 ./stop
+
 ./update
+
 sudo reboot
-```
 
----
+In progress there is a button to check version and do auto update routine.
 
-## Software Architecture
 
-The software consists of two parts:
-
-1. **SDR engine** — a Python/GNURadio flowgraph (`Lang_TRX_Hack.py`) generated from `Lang_TRX_Hack.grc` and manually extended with `ControlTRX_Hack.py`
-2. **GUI frontend** — written in C (`LangstoneGUI_Hack.c`), communicating with GNURadio via a Linux pipe
-
----
-
-## License
-
-This project is licensed under the **GNU General Public License v3.0**.
-See the [LICENSE](LICENSE) file for full terms.
-
-This license applies to all modifications made in this repository. The original upstream code retains its original copyright by Colin Durbridge G4EML and is also GPL-3.0 licensed.
-
----
-
-## Disclaimer
-
-This software is provided **"as is"**, without warranty of any kind.
-Amateur radio transmissions must comply with your national regulations and band plan.
-Use at your own risk.
-
----
-
-## Acknowledgements
-
-- **Colin Durbridge G4EML** — original Langstone V3 project
-- **British Amateur Television Club (BATC)** — Portsdown ATV system inspiration
-- **UK Microwave Group** — documentation and community support
-- GNURadio, HackRF, and the broader SDR open source community
-
----
-
-*73 de CU2ED — Azores, Portugal*

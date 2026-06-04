@@ -22,12 +22,11 @@ else
 fi
 
 # ── Compile ───────────────────────────────────────────────────────────────────
-# Each line exits immediately on error so upgrade script gets correct exit code
-cc $DIR/LangstoneGUI_Pluto.c -o $DIR/GUI_Pluto -liio -llgpio -lz -lm      || exit 1
-cc $DIR/LangstoneGUI_Hack.c  -o $DIR/GUI_Hack  -llgpio -lz -lm -lpthread  || exit 1
+cc $DIR/LangstoneGUI_Pluto.c -o $DIR/GUI_Pluto -liio -llgpio -lz -lm
+cc $DIR/LangstoneGUI_Hack.c  -o $DIR/GUI_Hack  -llgpio -lz -lm
 cc $DIR/LangstoneGUI_Lime.c  -o $DIR/GUI_Lime  -llgpio 2>/dev/null || true
-cc $DIR/HW_Test.c             -o $DIR/HW_Test   -llgpio                    || exit 1
-cc $DIR/Pluto_Test.c          -o $DIR/Pluto_Test -liio                     || exit 1
+cc $DIR/HW_Test.c             -o $DIR/HW_Test   -llgpio
+cc $DIR/Pluto_Test.c          -o $DIR/Pluto_Test -liio
 
 # ── Report ────────────────────────────────────────────────────────────────────
 if [ -f "$VER_FILE" ]; then
