@@ -3372,8 +3372,9 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = MEM 
         {
         upgradeConfirm = 1;
         drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SURE?", BTN_WARN);
-        for(int cy=settingY-15; cy<settingY+20; cy++) drawLine(0,cy,799,cy,0,0,0);
-        gotoXY(0, settingY-10); textSize=2; setForeColour(255,50,50);
+        gotoXY(0, settingY); textSize=2; setForeColour(255,50,50);
+        displayStr("                                        ");
+        gotoXY(0, settingY); textSize=2; setForeColour(255,50,50);
         displayStr("Touch UPGRDE again to confirm    ");
         textSize=1;
         return;
@@ -5144,19 +5145,21 @@ void takeSnapshot(void)
   #undef PU32
 
   // ── Show filename on status line ─────────────────────────────────
-  {
-  char *fn = strrchr(fname, '/');
-  fn = fn ? fn+1 : fname;
-  // Clear wider area to cover any residual SET menu text
-  for(int cy = settingY-40; cy < settingY+24; cy++)
-    drawLine(0, cy, 799, cy, 0,0,0);
-  gotoXY(0, settingY-10);
-  setForeColour(255,220,0);
-  textSize=1;
-  char snapMsg[140];
-  snprintf(snapMsg, sizeof(snapMsg), "%s  saved", fn);
-  displayStr(snapMsg);
-  }
+  // Show filename only in FREQ mode — in SETTINGS mode the status line
+  // belongs to the settings menu and must not be written by SNAP
+  if(inputMode != SETTINGS)
+    {
+    char *fn = strrchr(fname, '/');
+    fn = fn ? fn+1 : fname;
+    for(int cy = settingY-40; cy < settingY+24; cy++)
+      drawLine(0, cy, 799, cy, 0,0,0);
+    gotoXY(0, settingY-10);
+    setForeColour(255,220,0);
+    textSize=1;
+    char snapMsg[140];
+    snprintf(snapMsg, sizeof(snapMsg), "%s  saved", fn);
+    displayStr(snapMsg);
+    }
 
   drawButtonIC7300(funcButtonsX+buttonSpaceX*1, funcButtonsY, "SNAP", BTN_OFF);
 }
