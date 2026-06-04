@@ -3372,8 +3372,8 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = MEM 
         {
         upgradeConfirm = 1;
         drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SURE?", BTN_WARN);
-        for(int cy=settingY-2; cy<settingY+20; cy++) drawLine(0,cy,799,cy,0,0,0);
-        gotoXY(0, settingY); textSize=2; setForeColour(255,50,50);
+        for(int cy=settingY-15; cy<settingY+20; cy++) drawLine(0,cy,799,cy,0,0,0);
+        gotoXY(0, settingY-10); textSize=2; setForeColour(255,50,50);
         displayStr("Touch UPGRDE again to confirm    ");
         textSize=1;
         return;
