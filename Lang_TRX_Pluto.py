@@ -1,56 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  Langstone V3H — PlutoSDR flowgraph  (Lang_TRX_Pluto.py)
-#  Hardware: ADALM-PLUTO, GNU Radio 3.10, RPi5, 48kHz audio
-#  AGC block: analog.agc3_cc  (complex, pre-demodulation)
-# ══════════════════════════════════════════════════════════════════════════════
-#
-#  AGC MODE — Button 5 (FREQ mode), cycles OFF→F→M→S→L→OFF
-#  FIFO command: J<n>  (J0=OFF, J1=FAST, J2=MED, J3=SLOW, J4=LONG)
-#  Handler: set_AGC_Params(attack, decay) → agc3_cc.set_attack_rate/set_decay_rate
-#
-#  agc3_cc uses RATE = 1/τ_samples semantics (NOT loop gain like agc2_ff)
-#  Larger value = faster response. Formula: τ = 1 / (rate × sample_rate)
-#  iir_update_decim=48 → AGC updates at 1kHz (smoother, less oscillation)
-#  max_gain=50 (34dB) → prevents saturation on noise/silence
-#
-#  To edit AGC mode parameters: search for "params = [" around line 635
-#
-#  Mode   attack   decay    τ_attack   τ_decay   Best for
-#  ─────────────────────────────────────────────────────────
-#  OFF    bypass   bypass           —          —   No AGC
-#  FAST   5e-03    1e-03        4.2 ms     0.02 s  CW
-#  MED    1e-03    2e-04       20.8 ms     0.10 s  SSB fast
-#  SLOW   5e-04    5e-05       41.7 ms     0.42 s  SSB normal
-#  LONG   1e-04    1e-05      208.3 ms     2.08 s  SSB DX
-
-#
-# ──────────────────────────────────────────────────────────────────────────────
-#  AGC LEVEL — SET menu "AGC Adj=" scrolls -20dB to +20dB
-#  FIFO command: Y<dB>  (e.g. Y0, Y+10, Y-6)
-#  Handler: set_AGC_Level(level_db)
-#  Method: agc3_cc.set_reference(0.1 × 10^(dB/20))
-#          Also resets gain to reference to avoid jump transient.
-#  Reference baseline = 0.1 (0dB). Range: 0.01 (-20dB) to 1.0 (+20dB).
-#
-# ──────────────────────────────────────────────────────────────────────────────
-#  OTHER FIFO COMMANDS (for reference)
-#  F<freq_hz>   Set RX frequency
-#  G<gain>      Set RX gain (Pluto hardware AGC: 0=slow_attack, other=manual)
-#  V<vol>       Set AF volume (0-100)
-#  W<sel>       Set FFT source select
-#  Y<dB>        AGC level adjust (-20 to +20 dB)
-#  J<n>         AGC mode (0=OFF 1=F 2=M 3=S 4=L)
-# ══════════════════════════════════════════════════════════════════════════════
-
 #
 # SPDX-License-Identifier: GPL-3.0
 #
 # GNU Radio Python Flow Graph
 # Title: Lang Trx Pluto
-# GNU Radio version: 3.10.5.1
+# GNU Radio version: 3.10.12.0
 
 from gnuradio import analog
 from gnuradio import audio
@@ -61,14 +17,16 @@ from gnuradio import gr
 from gnuradio.fft import window
 import sys
 import signal
+import os
+import errno
 from argparse import ArgumentParser
 from gnuradio.eng_arg import eng_float, intx
 from gnuradio import eng_notation
 from gnuradio import iio
 from gnuradio import network
 from gnuradio.fft import logpwrfft
-import os
-import errno
+import threading
+
 
 
 
@@ -76,24 +34,17 @@ class Lang_TRX_Pluto(gr.top_block):
 
     def __init__(self):
         gr.top_block.__init__(self, "Lang Trx Pluto", catch_exceptions=True)
+        self.flowgraph_started = threading.Event()
 
         ##################################################
         # Variables
         ##################################################
-        plutoip=os.environ.get('PLUTO_IP')
-        if plutoip==None :
-          plutoip='pluto.local'
-        plutoip='ip:' + plutoip
         self.Tx_Mode = Tx_Mode = 0
         self.Tx_LO = Tx_LO = 1000000000
         self.Tx_Gain = Tx_Gain = 0
         self.Tx_Filt_Low = Tx_Filt_Low = 300
         self.Tx_Filt_High = Tx_Filt_High = 3000
         self.ToneBurst = ToneBurst = False
-        self.SSB_G_EQ_M2 = SSB_G_EQ_M2 = 40
-        self.SSB_G_EQ_M1 = SSB_G_EQ_M1 = 20
-        self.SSB_G_EQ_L = SSB_G_EQ_L = 1
-        self.SSB_G_EQ_H = SSB_G_EQ_H = 52
         self.Rx_Mute = Rx_Mute = False
         self.Rx_Mode = Rx_Mode = 0
         self.Rx_LO = Rx_LO = 1000000000
@@ -146,7 +97,7 @@ class Lang_TRX_Pluto(gr.top_block):
             avg_alpha=0.9,
             average=True,
             shift=False)
-        self.iio_pluto_source_0 = iio.fmcomms2_source_fc32(plutoip, [True, True], 0x800)
+        self.iio_pluto_source_0 = iio.fmcomms2_source_fc32('ip:pluto.local' if 'ip:pluto.local' else iio.get_pluto_uri(), [True, True], 0x800)
         self.iio_pluto_source_0.set_len_tag_key('packet_len')
         self.iio_pluto_source_0.set_frequency(Rx_LO)
         self.iio_pluto_source_0.set_samplerate(528000)
@@ -156,7 +107,7 @@ class Lang_TRX_Pluto(gr.top_block):
         self.iio_pluto_source_0.set_rfdc(True)
         self.iio_pluto_source_0.set_bbdc(True)
         self.iio_pluto_source_0.set_filter_params('Auto', '', 0, 0)
-        self.iio_pluto_sink_0 = iio.fmcomms2_sink_fc32(plutoip, [True, True], 0x800, False)
+        self.iio_pluto_sink_0 = iio.fmcomms2_sink_fc32('ip:pluto.local' if 'ip:pluto.local' else iio.get_pluto_uri(), [True, True], 0x800, False)
         self.iio_pluto_sink_0.set_len_tag_key('')
         self.iio_pluto_sink_0.set_bandwidth(2000000)
         self.iio_pluto_sink_0.set_frequency(Tx_LO)
@@ -170,70 +121,24 @@ class Lang_TRX_Pluto(gr.top_block):
         self.blocks_multiply_xx_0 = blocks.multiply_vcc(1)
         self.blocks_multiply_const_vxx_4 = blocks.multiply_const_cc((Tx_Mode < 4) or (Tx_Mode==5))
         self.blocks_multiply_const_vxx_3 = blocks.multiply_const_cc(Tx_Mode==4)
-        self.blocks_multiply_const_vxx_2_2 = blocks.multiply_const_ff(Tx_Mode<4)
         self.blocks_multiply_const_vxx_2_1_0 = blocks.multiply_const_ff((1.0 + (Rx_Mode==5)))
         self.blocks_multiply_const_vxx_2_1 = blocks.multiply_const_ff(Rx_Mode==5)
-        self.blocks_multiply_const_vxx_2_0_0 = blocks.multiply_const_ff((Tx_Mode==4) or (Tx_Mode==5))
         self.blocks_multiply_const_vxx_2_0 = blocks.multiply_const_ff(((Rx_Mode==4) * 0.2))
         self.blocks_multiply_const_vxx_2 = blocks.multiply_const_ff(Rx_Mode<4)
         self.blocks_multiply_const_vxx_1 = blocks.multiply_const_ff(((AFGain/100.0) *  (not Rx_Mute)))
-        self.blocks_multiply_const_vxx_0_1 = blocks.multiply_const_ff(((MicGain)*(int(Tx_Mode==0)) + (MicGain)*(int(Tx_Mode==1)) + (AMMIC/5.0)*(int(Tx_Mode==5)) ))
         self.blocks_multiply_const_vxx_0_0 = blocks.multiply_const_ff((FMMIC/5.0))
+        self.blocks_multiply_const_vxx_0 = blocks.multiply_const_ff(((MicGain)*(int(Tx_Mode==0)) + (MicGain)*(int(Tx_Mode==1)) + (AMMIC/10.0)*(int(Tx_Mode==5)) ))
         self.blocks_keep_one_in_n_0_0 = blocks.keep_one_in_n(gr.sizeof_gr_complex*1, (2 ** FFT_SEL))
         self.blocks_keep_one_in_n_0 = blocks.keep_one_in_n(gr.sizeof_gr_complex*1, (2 ** FFT_SEL))
         self.blocks_float_to_complex_0_0 = blocks.float_to_complex(1)
-        self.blocks_float_to_complex_0 = blocks.float_to_complex(1)
-        self.blocks_complex_to_real_0_0 = blocks.complex_to_real(1)
         self.blocks_complex_to_real_0 = blocks.complex_to_real(1)
         self.blocks_complex_to_mag_0 = blocks.complex_to_mag(1)
         self.blocks_add_xx_2 = blocks.add_vcc(1)
-        self.blocks_add_xx_1_0_0 = blocks.add_vff(1)
         self.blocks_add_xx_1_0 = blocks.add_vff(1)
         self.blocks_add_xx_1 = blocks.add_vff(1)
-        self.blocks_add_xx_0_0_0 = blocks.add_vff(1)
         self.blocks_add_xx_0_0 = blocks.add_vff(1)
         self.blocks_add_xx_0 = blocks.add_vff(1)
         self.blocks_add_const_vxx_0_0 = blocks.add_const_ff(((0.5 * int(Tx_Mode==5)) + int(Tx_Mode==2) +int(Tx_Mode==3)))
-        self.band_pass_filter_mic4 = filter.interp_fir_filter_fff(
-            1,
-            firdes.band_pass(
-                (SSB_G_EQ_H/10),
-                48000,
-                2350,
-                3300,
-                100,
-                window.WIN_HAMMING,
-                6.76))
-        self.band_pass_filter_mic3 = filter.interp_fir_filter_fff(
-            1,
-            firdes.band_pass(
-                (SSB_G_EQ_M2/10),
-                48000,
-                1450,
-                2350,
-                100,
-                window.WIN_HAMMING,
-                6.76))
-        self.band_pass_filter_mic2 = filter.interp_fir_filter_fff(
-            1,
-            firdes.band_pass(
-                (SSB_G_EQ_M1/10),
-                48000,
-                650,
-                1450,
-                100,
-                window.WIN_HAMMING,
-                6.76))
-        self.band_pass_filter_mic1 = filter.interp_fir_filter_fff(
-            1,
-            firdes.band_pass(
-                (SSB_G_EQ_L/10),
-                48000,
-                100,
-                750,
-                100,
-                window.WIN_HAMMING,
-                6.76))
         self.band_pass_filter_1 = filter.fir_filter_fff(
             1,
             firdes.band_pass(
@@ -264,8 +169,15 @@ class Lang_TRX_Pluto(gr.top_block):
                 100,
                 window.WIN_HAMMING,
                 6.76))
-        self.audio_source_0_0 = audio.source(48000, "hw:CARD=Device,DEV=0", False)
+        self.audio_source_0 = audio.source(48000, "hw:CARD=Device,DEV=0", False)
         self.audio_sink_0 = audio.sink(48000, "hw:CARD=Device,DEV=0", False)
+        # ── AVL — Audio Volume Limiter (last stage before audio_sink) ─────────
+        # attack fast (τ=10µs) to catch peaks before they click
+        # decay slow (τ=417ms) so it doesn't breathe audibly
+        # reference=0.4 — just above AGC normal output (0.3), catches peaks
+        # max_gain=1.0 — can ONLY reduce, never amplify
+        self.analog_avl_0 = analog.agc2_ff(5.0, 0.00005, 0.5, 1.0)
+        self.analog_avl_0.set_max_gain(0.8)
         self.analog_sig_source_x_1_0 = analog.sig_source_f(48000, analog.GR_SIN_WAVE, (CTCSS/10.0), (0.15 * (CTCSS >0)), 0, 0)
         self.analog_sig_source_x_1 = analog.sig_source_f(48000, analog.GR_COS_WAVE, 1750, (1.0*ToneBurst), 0, 0)
         self.analog_sig_source_x_0 = analog.sig_source_c(48000, analog.GR_COS_WAVE, 0, 1, 0, 0)
@@ -285,15 +197,13 @@ class Lang_TRX_Pluto(gr.top_block):
         	max_dev=5e3,
           )
         self.analog_const_source_x_0 = analog.sig_source_f(0, analog.GR_CONST_WAVE, 0, 0, 0)
-        self.analog_agc3_xx_0 = analog.agc3_cc((1e-3), (2e-4), 0.1, 1.0, 48)
-        # attack=21ms decay=104ms iir_update_decim=48 (updates at 1kHz)
-        self.analog_agc3_xx_0.set_max_gain(50)  # 34dB max — prevents saturation on silence
+        self.analog_agc2_xx_0 = analog.agc2_ff(0.1, 0.00002, (3e-1), 1.0, 20)
 
 
         ##################################################
         # Connections
         ##################################################
-        self.connect((self.analog_agc3_xx_0, 0), (self.blocks_complex_to_real_0_0, 0))
+        self.connect((self.analog_agc2_xx_0, 0), (self.blocks_multiply_const_vxx_2_1_0, 0))
         self.connect((self.analog_const_source_x_0, 0), (self.blocks_float_to_complex_0_0, 1))
         self.connect((self.analog_nbfm_rx_0, 0), (self.blocks_multiply_const_vxx_2_0, 0))
         self.connect((self.analog_nbfm_tx_0, 0), (self.blocks_multiply_const_vxx_3, 0))
@@ -302,45 +212,31 @@ class Lang_TRX_Pluto(gr.top_block):
         self.connect((self.analog_sig_source_x_0, 0), (self.blocks_multiply_xx_0, 1))
         self.connect((self.analog_sig_source_x_1, 0), (self.blocks_add_xx_0, 0))
         self.connect((self.analog_sig_source_x_1_0, 0), (self.blocks_add_xx_0_0, 0))
-        self.connect((self.audio_source_0_0, 0), (self.band_pass_filter_mic1, 0))
-        self.connect((self.audio_source_0_0, 0), (self.band_pass_filter_mic2, 0))
-        self.connect((self.audio_source_0_0, 0), (self.band_pass_filter_mic3, 0))
-        self.connect((self.audio_source_0_0, 0), (self.band_pass_filter_mic4, 0))
-        self.connect((self.audio_source_0_0, 0), (self.blocks_multiply_const_vxx_2_0_0, 0))
+        self.connect((self.audio_source_0, 0), (self.blocks_multiply_const_vxx_0, 0))
+        self.connect((self.audio_source_0, 0), (self.blocks_multiply_const_vxx_0_0, 0))
         self.connect((self.band_pass_filter_0, 0), (self.analog_nbfm_rx_0, 0))
         self.connect((self.band_pass_filter_0, 0), (self.blocks_complex_to_mag_0, 0))
         self.connect((self.band_pass_filter_0, 0), (self.blocks_complex_to_real_0, 0))
         self.connect((self.band_pass_filter_0_0, 0), (self.blocks_multiply_const_vxx_4, 0))
         self.connect((self.band_pass_filter_1, 0), (self.blocks_add_xx_0_0, 1))
-        self.connect((self.band_pass_filter_mic1, 0), (self.blocks_add_xx_0_0_0, 3))
-        self.connect((self.band_pass_filter_mic2, 0), (self.blocks_add_xx_0_0_0, 2))
-        self.connect((self.band_pass_filter_mic3, 0), (self.blocks_add_xx_0_0_0, 1))
-        self.connect((self.band_pass_filter_mic4, 0), (self.blocks_add_xx_0_0_0, 0))
         self.connect((self.blocks_add_const_vxx_0_0, 0), (self.analog_rail_ff_0_0, 0))
         self.connect((self.blocks_add_xx_0, 0), (self.analog_rail_ff_0, 0))
         self.connect((self.blocks_add_xx_0_0, 0), (self.analog_nbfm_tx_0, 0))
-        self.connect((self.blocks_add_xx_0_0_0, 0), (self.blocks_multiply_const_vxx_2_2, 0))
         self.connect((self.blocks_add_xx_1, 0), (self.blocks_multiply_const_vxx_1, 0))
-        self.connect((self.blocks_add_xx_1_0, 0), (self.blocks_float_to_complex_0, 0))
-        self.connect((self.blocks_add_xx_1_0_0, 0), (self.blocks_multiply_const_vxx_0_0, 0))
-        self.connect((self.blocks_add_xx_1_0_0, 0), (self.blocks_multiply_const_vxx_0_1, 0))
+        self.connect((self.blocks_add_xx_1_0, 0), (self.analog_agc2_xx_0, 0))
         self.connect((self.blocks_add_xx_2, 0), (self.blocks_mute_xx_0_0_0, 0))
         self.connect((self.blocks_complex_to_mag_0, 0), (self.blocks_multiply_const_vxx_2_1, 0))
         self.connect((self.blocks_complex_to_real_0, 0), (self.blocks_multiply_const_vxx_2, 0))
-        self.connect((self.blocks_complex_to_real_0_0, 0), (self.blocks_multiply_const_vxx_2_1_0, 0))
-        self.connect((self.blocks_float_to_complex_0, 0), (self.analog_agc3_xx_0, 0))
         self.connect((self.blocks_float_to_complex_0_0, 0), (self.blocks_multiply_xx_0, 0))
         self.connect((self.blocks_keep_one_in_n_0, 0), (self.logpwrfft_x_0, 0))
         self.connect((self.blocks_keep_one_in_n_0_0, 0), (self.logpwrfft_x_0_0, 0))
+        self.connect((self.blocks_multiply_const_vxx_0, 0), (self.blocks_add_const_vxx_0_0, 0))
         self.connect((self.blocks_multiply_const_vxx_0_0, 0), (self.blocks_add_xx_0, 1))
-        self.connect((self.blocks_multiply_const_vxx_0_1, 0), (self.blocks_add_const_vxx_0_0, 0))
         self.connect((self.blocks_multiply_const_vxx_1, 0), (self.low_pass_filter_0, 0))
         self.connect((self.blocks_multiply_const_vxx_2, 0), (self.blocks_add_xx_1_0, 0))
         self.connect((self.blocks_multiply_const_vxx_2_0, 0), (self.blocks_add_xx_1, 1))
-        self.connect((self.blocks_multiply_const_vxx_2_0_0, 0), (self.blocks_add_xx_1_0_0, 0))
         self.connect((self.blocks_multiply_const_vxx_2_1, 0), (self.blocks_add_xx_1_0, 1))
         self.connect((self.blocks_multiply_const_vxx_2_1_0, 0), (self.blocks_add_xx_1, 0))
-        self.connect((self.blocks_multiply_const_vxx_2_2, 0), (self.blocks_add_xx_1_0_0, 1))
         self.connect((self.blocks_multiply_const_vxx_3, 0), (self.blocks_add_xx_2, 0))
         self.connect((self.blocks_multiply_const_vxx_4, 0), (self.blocks_add_xx_2, 1))
         self.connect((self.blocks_multiply_xx_0, 0), (self.band_pass_filter_0_0, 0))
@@ -353,7 +249,8 @@ class Lang_TRX_Pluto(gr.top_block):
         self.connect((self.iio_pluto_source_0, 0), (self.freq_xlating_fir_filter_xxx_0, 0))
         self.connect((self.logpwrfft_x_0, 0), (self.blocks_vector_to_stream_0, 0))
         self.connect((self.logpwrfft_x_0_0, 0), (self.blocks_vector_to_stream_0_0, 0))
-        self.connect((self.low_pass_filter_0, 0), (self.audio_sink_0, 0))
+        self.connect((self.low_pass_filter_0, 0), (self.analog_avl_0, 0))
+        self.connect((self.analog_avl_0, 0), (self.audio_sink_0, 0))
         self.connect((self.rational_resampler_xxx_0, 0), (self.iio_pluto_sink_0, 0))
 
 
@@ -363,9 +260,7 @@ class Lang_TRX_Pluto(gr.top_block):
     def set_Tx_Mode(self, Tx_Mode):
         self.Tx_Mode = Tx_Mode
         self.blocks_add_const_vxx_0_0.set_k(((0.5 * int(self.Tx_Mode==5)) + int(self.Tx_Mode==2) +int(self.Tx_Mode==3)))
-        self.blocks_multiply_const_vxx_0_1.set_k(((self.MicGain)*(int(self.Tx_Mode==0)) + (self.MicGain)*(int(self.Tx_Mode==1)) + (self.AMMIC/5.0)*(int(self.Tx_Mode==5)) ))
-        self.blocks_multiply_const_vxx_2_0_0.set_k((self.Tx_Mode==4) or (self.Tx_Mode==5))
-        self.blocks_multiply_const_vxx_2_2.set_k(self.Tx_Mode<4)
+        self.blocks_multiply_const_vxx_0.set_k(((self.MicGain)*(int(self.Tx_Mode==0)) + (self.MicGain)*(int(self.Tx_Mode==1)) + (self.AMMIC/10.0)*(int(self.Tx_Mode==5)) ))
         self.blocks_multiply_const_vxx_3.set_k(self.Tx_Mode==4)
         self.blocks_multiply_const_vxx_4.set_k((self.Tx_Mode < 4) or (self.Tx_Mode==5))
         self.blocks_mute_xx_0_0_0.set_mute(bool((not self.PTT) or (self.Tx_Mode==2 and not self.KEY) or (self.Tx_Mode==3 and not self.KEY)))
@@ -405,34 +300,6 @@ class Lang_TRX_Pluto(gr.top_block):
         self.ToneBurst = ToneBurst
         self.analog_sig_source_x_1.set_amplitude((1.0*self.ToneBurst))
 
-    def get_SSB_G_EQ_M2(self):
-        return self.SSB_G_EQ_M2
-
-    def set_SSB_G_EQ_M2(self, SSB_G_EQ_M2):
-        self.SSB_G_EQ_M2 = SSB_G_EQ_M2
-        self.band_pass_filter_mic3.set_taps(firdes.band_pass((self.SSB_G_EQ_M2/10), 48000, 1450, 2350, 100, window.WIN_HAMMING, 6.76))
-
-    def get_SSB_G_EQ_M1(self):
-        return self.SSB_G_EQ_M1
-
-    def set_SSB_G_EQ_M1(self, SSB_G_EQ_M1):
-        self.SSB_G_EQ_M1 = SSB_G_EQ_M1
-        self.band_pass_filter_mic2.set_taps(firdes.band_pass((self.SSB_G_EQ_M1/10), 48000, 650, 1450, 100, window.WIN_HAMMING, 6.76))
-
-    def get_SSB_G_EQ_L(self):
-        return self.SSB_G_EQ_L
-
-    def set_SSB_G_EQ_L(self, SSB_G_EQ_L):
-        self.SSB_G_EQ_L = SSB_G_EQ_L
-        self.band_pass_filter_mic1.set_taps(firdes.band_pass((self.SSB_G_EQ_L/10), 48000, 100, 750, 100, window.WIN_HAMMING, 6.76))
-
-    def get_SSB_G_EQ_H(self):
-        return self.SSB_G_EQ_H
-
-    def set_SSB_G_EQ_H(self, SSB_G_EQ_H):
-        self.SSB_G_EQ_H = SSB_G_EQ_H
-        self.band_pass_filter_mic4.set_taps(firdes.band_pass((self.SSB_G_EQ_H/10), 48000, 2350, 3300, 100, window.WIN_HAMMING, 6.76))
-
     def get_Rx_Mute(self):
         return self.Rx_Mute
 
@@ -463,36 +330,58 @@ class Lang_TRX_Pluto(gr.top_block):
     def set_Rx_Gain(self, Rx_Gain):
         self.Rx_Gain = Rx_Gain
 
+    def agc_hold(self, duration_ms=200):
+        # Freeze AGC gain during filter retap to prevent audio dropout
+        import threading, time
+        current_gain  = self.analog_agc2_xx_0.get_gain()
+        normal_decay  = getattr(self, '_agc_normal_decay',  0.00002)
+        normal_attack = getattr(self, '_agc_normal_attack', 0.1)
+        def _hold():
+            self.analog_agc2_xx_0.set_decay_rate(0.000001)
+            self.analog_agc2_xx_0.set_attack_rate(0.000001)
+            self.analog_agc2_xx_0.set_gain(current_gain)
+            time.sleep(duration_ms / 1000.0)
+            self.analog_agc2_xx_0.set_attack_rate(normal_attack)
+            self.analog_agc2_xx_0.set_decay_rate(normal_decay)
+        threading.Thread(target=_hold, daemon=True).start()
+
     def set_AGC_Level(self, level_db):
-        # AGC level: maps dB offset to agc3 reference amplitude
-        # reference=0.1 is 0dB baseline. Range: -20 to +20dB
-        # Clamped to safe range to prevent saturation jumps
-        import math
+        # Ramp agc2_ff reference to avoid jump transient
         if level_db < -20: level_db = -20
         if level_db >  20: level_db =  20
-        ref = 0.1 * (10.0 ** (level_db / 20.0))
-        # Also reset gain to reference to avoid jump transient
-        self.analog_agc3_xx_0.set_reference(ref)
-        self.analog_agc3_xx_0.set_gain(ref)
+        self._agc_level_db = level_db
+        import threading, time
+        target_ref  = 0.3 * (10.0 ** (level_db / 20.0))
+        current_ref = getattr(self, '_current_agc_ref', 0.3)
+        steps = 20
+        def _ramp():
+            for i in range(1, steps+1):
+                r = current_ref + (target_ref - current_ref) * i / steps
+                self.analog_agc2_xx_0.set_reference(r)
+                self.analog_agc2_xx_0.set_gain(r)
+                time.sleep(0.005)
+            self._current_agc_ref = target_ref
+        threading.Thread(target=_ramp, daemon=True).start()
 
     def set_AGC_Params(self, attack, decay):
-        # AGC3 mode control (J command)
-        # max_gain=50 (34dB) prevents saturation on noise/silence
-        # iir_update_decim=48 → updates at 1kHz (smoother, less oscillation)
+        # agc2_ff mode control (J command)
         if attack == 0 and decay == 0:
-            # OFF: true bypass — unity gain, no AGC action
-            self.analog_agc3_xx_0.set_max_gain(1)
-            self.analog_agc3_xx_0.set_attack_rate(1.0)
-            self.analog_agc3_xx_0.set_decay_rate(1.0)
+            self.analog_agc2_xx_0.set_max_gain(1.0)
+            self.analog_agc2_xx_0.set_gain(1.0)
+            self.analog_agc2_xx_0.set_reference(1.0)
         else:
-            self.analog_agc3_xx_0.set_max_gain(50)
-            self.analog_agc3_xx_0.set_attack_rate(attack)
-            self.analog_agc3_xx_0.set_decay_rate(decay)
+            self._agc_normal_attack = attack
+            self._agc_normal_decay  = decay
+            self.analog_agc2_xx_0.set_max_gain(20)
+            self.analog_agc2_xx_0.set_reference(0.3)
+            self.analog_agc2_xx_0.set_attack_rate(attack)
+            self.analog_agc2_xx_0.set_decay_rate(decay)
 
     def get_Rx_Filt_Low(self):
         return self.Rx_Filt_Low
 
     def set_Rx_Filt_Low(self, Rx_Filt_Low):
+        self.agc_hold(250)
         self.Rx_Filt_Low = Rx_Filt_Low
         self.band_pass_filter_0.set_taps(firdes.complex_band_pass(1, 48000, self.Rx_Filt_Low, self.Rx_Filt_High, 100, window.WIN_HAMMING, 6.76))
 
@@ -500,6 +389,7 @@ class Lang_TRX_Pluto(gr.top_block):
         return self.Rx_Filt_High
 
     def set_Rx_Filt_High(self, Rx_Filt_High):
+        self.agc_hold(250)
         self.Rx_Filt_High = Rx_Filt_High
         self.band_pass_filter_0.set_taps(firdes.complex_band_pass(1, 48000, self.Rx_Filt_Low, self.Rx_Filt_High, 100, window.WIN_HAMMING, 6.76))
 
@@ -516,13 +406,18 @@ class Lang_TRX_Pluto(gr.top_block):
     def set_PTT(self, PTT):
         self.PTT = PTT
         self.blocks_mute_xx_0_0_0.set_mute(bool((not self.PTT) or (self.Tx_Mode==2 and not self.KEY) or (self.Tx_Mode==3 and not self.KEY)))
+        # Freeze AGC on PTT transitions to prevent audio level jump
+        if self.PTT:
+            self.agc_hold(200)   # entering TX
+        else:
+            self.agc_hold(500)   # returning to RX — gradual recovery
 
     def get_MicGain(self):
         return self.MicGain
 
     def set_MicGain(self, MicGain):
         self.MicGain = MicGain
-        self.blocks_multiply_const_vxx_0_1.set_k(((self.MicGain)*(int(self.Tx_Mode==0)) + (self.MicGain)*(int(self.Tx_Mode==1)) + (self.AMMIC/5.0)*(int(self.Tx_Mode==5)) ))
+        self.blocks_multiply_const_vxx_0.set_k(((self.MicGain)*(int(self.Tx_Mode==0)) + (self.MicGain)*(int(self.Tx_Mode==1)) + (self.AMMIC/10.0)*(int(self.Tx_Mode==5)) ))
 
     def get_KEY(self):
         return self.KEY
@@ -561,7 +456,7 @@ class Lang_TRX_Pluto(gr.top_block):
 
     def set_AMMIC(self, AMMIC):
         self.AMMIC = AMMIC
-        self.blocks_multiply_const_vxx_0_1.set_k(((self.MicGain)*(int(self.Tx_Mode==0)) + (self.MicGain)*(int(self.Tx_Mode==1)) + (self.AMMIC/5.0)*(int(self.Tx_Mode==5)) ))
+        self.blocks_multiply_const_vxx_0.set_k(((self.MicGain)*(int(self.Tx_Mode==0)) + (self.MicGain)*(int(self.Tx_Mode==1)) + (self.AMMIC/10.0)*(int(self.Tx_Mode==5)) ))
 
     def get_AFGain(self):
         return self.AFGain
@@ -571,14 +466,15 @@ class Lang_TRX_Pluto(gr.top_block):
         self.blocks_multiply_const_vxx_1.set_k(((self.AFGain/100.0) *  (not self.Rx_Mute)))
 
 
+
+
 def docommands(tb):
   try:
     os.mkfifo("/tmp/langstoneTRx")
   except OSError as oe:
     if oe.errno != errno.EEXIST:
-      raise    
+      raise
   ex=False
-  lastbase=0
   while not ex:
     fifoin=open("/tmp/langstoneTRx",'r')
     while True:
@@ -587,19 +483,19 @@ def docommands(tb):
          for line in filein:
            line=line.strip()
            if line[0]=='Q':
-              ex=True                  
+              ex=True
            if line[0]=='U':
               value=int(line[1:])
               tb.set_Rx_Mute(value)
            if line[0]=='H':
               value=int(line[1:])
-              if value==1:   
+              if value==1:
                   tb.lock()
               if value==0:
-                  tb.unlock() 
+                  tb.unlock()
            if line[0]=='O':
               value=int(line[1:])
-              tb.set_RxOffset(value)  
+              tb.set_RxOffset(value)
            if line[0]=='V':
               value=int(line[1:])
               tb.set_AFGain(value)
@@ -609,41 +505,29 @@ def docommands(tb):
            if line[0]=='A':
               value=int(line[1:])
               tb.set_Rx_Gain(value)
-           if line[0]=='b':
-              value=int(line[1:])
-              tb.set_SSB_G_EQ_H(value)
-           if line[0]=='p':
-              value=int(line[1:])
-              tb.set_SSB_G_EQ_M2(value)
-           if line[0]=='P':
-              value=int(line[1:])
-              tb.set_SSB_G_EQ_M1(value)
-           if line[0]=='e':
-              value=int(line[1:])
-              tb.set_SSB_G_EQ_L(value)             
            if line[0]=='F':
               value=int(line[1:])
-              tb.set_Rx_Filt_High(value) 
+              tb.set_Rx_Filt_High(value)
            if line[0]=='I':
               value=int(line[1:])
-              tb.set_Rx_Filt_Low(value) 
+              tb.set_Rx_Filt_Low(value)
            if line[0]=='M':
               value=int(line[1:])
-              tb.set_Rx_Mode(value) 
+              tb.set_Rx_Mode(value)
               tb.set_Tx_Mode(value)
            if line=='R':
-              tb.set_PTT(False) 
+              tb.set_PTT(False)
            if line=='T':
               tb.set_PTT(True)
            if line[0]=='K':
               value=int(line[1:])
-              tb.set_KEY(value) 
+              tb.set_KEY(value)
            if line[0]=='B':
               value=int(line[1:])
-              tb.set_ToneBurst(value) 
+              tb.set_ToneBurst(value)
            if line[0]=='G':
               value=int(line[1:])
-              tb.set_MicGain(value) 
+              tb.set_MicGain(value)
            if line[0]=='g':
               value=int(line[1:])
               tb.set_FMMIC(value)
@@ -652,45 +536,56 @@ def docommands(tb):
               tb.set_AMMIC(value)
            if line[0]=='f':
               value=int(line[1:])
-              tb.set_Tx_Filt_High(value) 
+              tb.set_Tx_Filt_High(value)
            if line[0]=='i':
               value=int(line[1:])
-              tb.set_Tx_Filt_Low(value)     
+              tb.set_Tx_Filt_Low(value)
            if line[0]=='l':
               value=int(line[1:])
-              tb.set_Tx_LO(value)  
+              tb.set_Tx_LO(value)
            if line[0]=='a':
               value=int(line[1:])
-              tb.set_Tx_Gain(value)     
+              tb.set_Tx_Gain(value)
            if line[0]=='C':
               value=int(line[1:])
-              tb.set_CTCSS(value)   
+              tb.set_CTCSS(value)
            if line[0]=='W':
               value=int(line[1:])
-              tb.set_FFT_SEL(value) 
+              tb.set_FFT_SEL(value)
            if line[0]=='Y':
-              # AGC level adjust: Y<dB> e.g. Y0, Y-10, Y+10
+              # AGC level adjust
               value=int(line[1:])
               tb.set_AGC_Level(value)
            if line[0]=='J':
               # AGC mode: J0=OFF J1=FAST J2=MED J3=SLOW J4=LONG
+              # agc2_ff loop gain params
               value=int(line[1:])
               params = [
-                (0,     0    ),  # J0 OFF
-                (5e-3,  1e-3 ),  # J1 FAST
-                (1e-3,  2e-4 ),  # J2 MED
-                (5e-4,  5e-5 ),  # J3 SLOW
-                (1e-4,  1e-5 ),  # J4 LONG
+                (0,     0      ),  # J0 OFF
+                (0.2,   0.01   ),  # J1 FAST
+                (0.1,   0.002  ),  # J2 MED
+                (0.05,  0.001  ),  # J3 SLOW
+                (0.02,  0.0002 ),  # J4 LONG
               ]
               if 0 <= value < len(params):
                 tb.set_AGC_Params(*params[value])
-                                                                                
        except:
          break
 
+
 def main(top_block_cls=Lang_TRX_Pluto, options=None):
     tb = top_block_cls()
+
+    def sig_handler(sig=None, frame=None):
+        tb.stop()
+        tb.wait()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, sig_handler)
+    signal.signal(signal.SIGTERM, sig_handler)
+
     tb.start()
+    tb.flowgraph_started.set()
     docommands(tb)
     tb.stop()
     tb.wait()

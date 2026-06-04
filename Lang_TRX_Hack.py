@@ -304,13 +304,12 @@ class Lang_TRX_Hack(gr.top_block):
         self.analog_agc2_xx_0 = analog.agc2_ff(0.1, 0.00002, (3e-1), 1.0)
         self.analog_agc2_xx_0.set_max_gain(20)
         # ── AVL — Audio Volume Limiter ────────────────────────────────────────
-        # Second agc2_ff used as a hard limiter — last stage before audio_sink
-        # attack very fast (~0.04ms) to catch peaks before they clip
-        # decay very slow (~2s) so it doesn't breathe audibly
+        # attack fast (τ=10µs) to catch peaks before they click
+        # decay slow (τ=417ms) so it doesn't breathe audibly
+        # reference=0.4 — just above AGC normal output (0.3), catches peaks
         # max_gain=1.0 — can ONLY reduce, never amplify
-        # reference=0.85 — 85% fullscale, safe headroom
-        self.analog_avl_0 = analog.agc2_ff(0.5, 0.00001, 0.85, 1.0)
-        self.analog_avl_0.set_max_gain(1.0)
+        self.analog_avl_0 = analog.agc2_ff(5.0, 0.00005, 0.5, 1.0)
+        self.analog_avl_0.set_max_gain(0.8)
         # Power probe for noise gate — measures AGC output level
         self.blocks_probe_signal_f_0 = blocks.probe_signal_f()
 
@@ -612,6 +611,13 @@ class Lang_TRX_Hack(gr.top_block):
         self.PTT = PTT
         self.blocks_mute_xx_0_0_0.set_mute(bool((not self.PTT) or (self.Tx_Mode==2 and not self.KEY) or (self.Tx_Mode==3 and not self.KEY)))
         self.blocks_selector_0.set_output_index(self.PTT)
+        # Freeze AGC on PTT transitions to prevent audio level jump
+        # TX→on:  freeze briefly so AGC doesn't chase TX signal
+        # TX→off: freeze 500ms so AGC recovers gradually from TX gain state
+        if self.PTT:
+            self.agc_hold(200)   # entering TX — freeze briefly
+        else:
+            self.agc_hold(500)   # returning to RX — allow gradual recovery
 
     def get_MicGain(self):
         return self.MicGain

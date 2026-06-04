@@ -333,7 +333,7 @@ int screenrotate = 0;
 int keyDownTimer=0;
 int CWIDkeyDownTime=1000;                     //time to put key down between CW Idents (100 per second)
 
-#define configDelay 500                              //delay before config is written after tuning (5 Seconds)
+#define configDelay 50                               //delay before config is written after tuning (~3 Seconds at 15fps)
 int configCounter=configDelay;
 
 int twoButTimer=0;
@@ -5031,6 +5031,7 @@ if(settingNo==BAND_BITS_TX)        // Band Bits Tx
       showSettingsMenu(); 
       displaySetting(settingNo);  
       }                                                                                                                 
+  if(mouseScroll==0) configCounter=configDelay;
 }
 
 
@@ -5606,8 +5607,8 @@ while(fscanf(conffile,"%49s %99s [^\n]\n",variable,value) !=EOF)
     }
 
     
-    if(strstr(variable,"currentBand")) sscanf(value,"%d",&band);
-    if(strstr(variable,"agcMode"))     sscanf(value,"%d",&agcMode);
+    if(strcmp(variable,"currentBand")==0) sscanf(value,"%d",&band);
+    if(strcmp(variable,"agcMode")==0)     sscanf(value,"%d",&agcMode);
     for(int _b=0;_b<numband;_b++){
       char _k[32]; sprintf(_k,"bandWFFloor%02d",_b);
       if(strstr(variable,_k)) sscanf(value,"%d",&bandWFFloor[_b]);
@@ -5616,18 +5617,18 @@ while(fscanf(conffile,"%49s %99s [^\n]\n",variable,value) !=EOF)
       sprintf(_k,"bandSpecStretch%02d",_b);
       if(strstr(variable,_k)) { sscanf(value,"%d",&bandSpecStretch[_b]); if(bandSpecStretch[_b]==0 && value[0]=='0') bandSpecStretch[_b]=0; }
     }
-    if(strstr(variable,"AGCAdjMode"))   sscanf(value,"%d %d %d %d %d %d",&AGCAdjByMode[0],&AGCAdjByMode[1],&AGCAdjByMode[2],&AGCAdjByMode[3],&AGCAdjByMode[4],&AGCAdjByMode[5]);
-    if(strstr(variable,"specStretch"))  sscanf(value,"%d",&specStretch);
-    if(strstr(variable,"callSign"))     { strncpy(callSign,value,11); callSign[11]=0; }
-    if(strstr(variable,"tuneDigit")) sscanf(value,"%d",&tuneDigit);   
-    if(strstr(variable,"mode")) sscanf(value,"%d",&mode);
-    if(strstr(variable,"SSBMic")) sscanf(value,"%d",&SSBMic);
-    if(strstr(variable,"FMMic")) sscanf(value,"%d",&FMMic);
-    if(strstr(variable,"AMMic")) sscanf(value,"%d",&AMMic);
-    if(strstr(variable,"volume")) sscanf(value,"%d",&volume);
-    if(strstr(variable,"breakInTime")) sscanf(value,"%d",&breakInTime);
-    if(strstr(variable,"bands24")) sscanf(value,"%d",&bands24);
-    if(strstr(variable,"RotateScreen")) sscanf(value,"%d",&screenrotate);
+    if(strcmp(variable,"AGCAdjMode")==0)   sscanf(value,"%d %d %d %d %d %d",&AGCAdjByMode[0],&AGCAdjByMode[1],&AGCAdjByMode[2],&AGCAdjByMode[3],&AGCAdjByMode[4],&AGCAdjByMode[5]);
+    if(strcmp(variable,"specStretch")==0)  sscanf(value,"%d",&specStretch);
+    if(strcmp(variable,"callSign")==0)     { strncpy(callSign,value,11); callSign[11]=0; }
+    if(strcmp(variable,"tuneDigit")==0) sscanf(value,"%d",&tuneDigit);   
+    if(strcmp(variable,"mode")==0) sscanf(value,"%d",&mode);
+    if(strcmp(variable,"SSBMic")==0) sscanf(value,"%d",&SSBMic);
+    if(strcmp(variable,"FMMic")==0) sscanf(value,"%d",&FMMic);
+    if(strcmp(variable,"AMMic")==0) sscanf(value,"%d",&AMMic);
+    if(strcmp(variable,"volume")==0) sscanf(value,"%d",&volume);
+    if(strcmp(variable,"breakInTime")==0) sscanf(value,"%d",&breakInTime);
+    if(strcmp(variable,"bands24")==0) sscanf(value,"%d",&bands24);
+    if(strcmp(variable,"RotateScreen")==0) sscanf(value,"%d",&screenrotate);
     if(mode>nummode-1) mode=0;
             
   }

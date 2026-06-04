@@ -15,7 +15,7 @@ echo "#################################"
 
 # Update the distribution
 sudo apt-get -y update
-sudo apt-get -y dist-upgrade
+#sudo apt-get -y dist-upgrade
 
 
 echo "#################################"
@@ -69,8 +69,8 @@ echo "####################################"
 echo "##     Installing Langstone-V3    ##"
 echo "####################################"
 
-git clone https://github.com/g4eml/Langstone-V3.git
-mv Langstone-V3 Langstone
+git clone https://github.com/jacintomfr/Langstone-JR.git
+mv Langstone-JR Langstone
 cd Langstone
 chmod +x build
 chmod +x run
@@ -99,6 +99,7 @@ sudo rm /etc/profile.d/sshpwd.sh
 #make Langstone autostart on boot
 
 cd Langstone
+sudo sed -i '/dtoverlay=vc4-kms-v3d/s/^/#/' /boot/firmware/config.txt
 cp run_pluto run
 cp stop_pluto stop
 

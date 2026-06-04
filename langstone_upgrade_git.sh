@@ -22,7 +22,6 @@ UPGRADE_FILES=(
     "LangstoneGUI_Hack.c" "LangstoneGUI_Pluto.c"
     "Lang_TRX_Hack.py"    "Lang_TRX_Pluto.py"
     "ControlTRX_Hack.py"  "ControlTRX_Pluto.py"
-    "langstone_upgrade_git.sh"
     "run" "stop"
     # NOTE: "build" and "version.h" are intentionally excluded
     # build: has auto-increment logic — never overwrite with repo version
