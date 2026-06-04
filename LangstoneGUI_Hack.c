@@ -2308,7 +2308,7 @@ void doGitUpgrade(void)
     }
 
   remove(PROGRESS_FILE);
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
 }
 
 void drawButtonIC7300(int x, int y, const char *label, int state)
@@ -5036,7 +5036,7 @@ void takeSnapshot(void)
   const int W = 800, H = 480, BPP = 4;
 
   // Flash SNAP button — give display time to flush before capturing fb0
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_ON);
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*1, funcButtonsY, "SNAP", BTN_ON);
   usleep(150000);  // 150ms — enough for LCD controller to render the button
 
   // Create snap directory if it does not exist
@@ -5047,7 +5047,7 @@ void takeSnapshot(void)
   if(!fb)
     {
     displayError("  SNAP: cannot open fb0  ");
-    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*1, funcButtonsY, "SNAP", BTN_OFF);
     return;
     }
   unsigned char *fbuf = (unsigned char*)malloc(W * H * BPP);
@@ -5117,7 +5117,7 @@ void takeSnapshot(void)
     {
     free(comp);
     displayError("  SNAP: write failed  ");
-    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*1, funcButtonsY, "SNAP", BTN_OFF);
     return;
     }
 
@@ -5157,7 +5157,7 @@ void takeSnapshot(void)
   displayStr(snapMsg);
   }
 
-  drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "MEM", BTN_OFF);
+  drawButtonIC7300(funcButtonsX+buttonSpaceX*1, funcButtonsY, "SNAP", BTN_OFF);
 }
 
 void showSettingsMenu(void)
