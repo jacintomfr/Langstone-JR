@@ -399,7 +399,25 @@ int popupFirstBand;
 // Accessed via MEM button popup (same philosophy as BAND)
 // Toque M1-M6/M7-M12 = recall; toque SAVE = store current freq+mode
 #define NUM_MEM 12
-typedef struct { double freq; int mode; char label[7]; int used; } MemChan;
+typedef struct {
+  double freq;
+  int    mode;
+  int    band;
+  // Full parameter snapshot at save time — independent of band arrays
+  int    txAmp;
+  int    txGain;
+  int    rxGain;
+  int    rxAmp;
+  int    rxBase;
+  int    squelch;
+  int    ctcss;
+  int    duplex;       // 0=off, 1=+shift, -1=-shift
+  double repShift;
+  int    fftbw;
+  int    bitsRx;
+  char   label[7];
+  int    used;
+} MemChan;
 MemChan memChan[NUM_MEM] = {0};
 int memFirstChan = 0;   // 0 = M1-M6, 6 = M7-M12
 int memSavePending = 0; // 1 = next mem touch stores instead of recalls
@@ -2707,32 +2725,22 @@ void displayPopupBeacon(void)
   popupSel=BEACON;
 }
 
-// ── getBandLabel — band name + stripped frequency for 2-line button ──────────
-// Line 1: band name ("2M","70CM"...)
-// Line 2: frequency with fixed prefix removed — only the variable digits
-//   2M:   144.200 → "4.200"   (strip 2: "14")
-//   70CM: 432.680 → "32.680"  (strip 1: "4")
-//   23CM: 1296.200→ "96.200"  (strip 2: "12")
-//   HF:   28.500  → "8.500"   (strip 1: "2")
+// ── getBandLabel — 2-line button: MHz integer + kHz decimal ──────────────────
+// Line 1: integer MHz part  e.g. "144", "432", "1296"
+// Line 2: kHz decimal part  e.g. "200.00", "680.40"
+// Consistent with main frequency display format
 static void getBandLabel(double freqMHz, char *bandStr, char *freqStr)
 {
-  char full[12];
-  sprintf(full, "%.3f", freqMHz);
-  int strip = 1;   // default: remove 1 leading digit
+  int    mhz_int  = (int)freqMHz;
+  double khz_frac = freqMHz - mhz_int;       // 0.200, 0.6804...
+  double khz_val  = khz_frac * 1000.0;       // 200.0, 680.4...
 
-  if     (freqMHz <  30.0)  { strcpy(bandStr,"HF");   strip=1; }
-  else if(freqMHz <  80.0)  { strcpy(bandStr,"6M");   strip=1; }
-  else if(freqMHz < 110.0)  { strcpy(bandStr,"4M");   strip=1; }
-  else if(freqMHz < 170.0)  { strcpy(bandStr,"2M");   strip=2; }
-  else if(freqMHz < 270.0)  { strcpy(bandStr,"1.25M");strip=2; }
-  else if(freqMHz < 450.0)  { strcpy(bandStr,"70CM"); strip=1; }
-  else if(freqMHz < 700.0)  { strcpy(bandStr,"33CM"); strip=1; }
-  else if(freqMHz < 1100.0) { strcpy(bandStr,"23CM"); strip=2; }
-  else if(freqMHz < 2500.0) { strcpy(bandStr,"13CM"); strip=2; }
-  else                      { strcpy(bandStr,"UHF");  strip=2; }
+  // Line 1: integer MHz
+  sprintf(bandStr, "%d", mhz_int);
 
-  strncpy(freqStr, full+strip, 7);
-  freqStr[6] = 0;
+  // Line 2: kHz with 2 decimal places (Hz resolution) — always 6 chars
+  // e.g. 200.00, 680.40, 000.00
+  sprintf(freqStr, "%06.2f", khz_val);
 }
 
 // ── drawButtonMem2L — 2-line memory button ───────────────────────────────────
@@ -2845,10 +2853,6 @@ void displayPopupMem(void)
     int mstate = memChan[ch].used ? BTN_OFF : BTN_WARN;
     drawButtonMem2L(popupX+(n+1)*buttonSpaceX, popupY, ch, mstate);
     }
-  // Usage hint in status line
-  gotoXY(0, settingY); textSize=2; setForeColour(100,100,100);
-  displayStr("Toque=recall   3seg=gravar              ");
-  textSize=1;
   popupSel=MEM;
 }
 
@@ -2857,9 +2861,14 @@ void saveMemConfig(void)
   FILE *f = fopen("/home/pi/Langstone/Langstone_Mem.conf","w");
   if(!f) return;
   for(int i=0; i<NUM_MEM; i++)
-    fprintf(f,"mem%02d %.6f %d %d %s\n", i,
-            memChan[i].freq, memChan[i].mode, memChan[i].used,
-            memChan[i].used ? memChan[i].label : "----");
+    // Format: idx freq mode band txAmp txGain rxGain rxAmp rxBase squelch ctcss duplex repShift fftbw bitsRx used label
+    fprintf(f,"mem%02d %.6f %d %d %d %d %d %d %d %d %d %d %.3f %d %d %d %s\n", i,
+            memChan[i].freq,     memChan[i].mode,   memChan[i].band,
+            memChan[i].txAmp,    memChan[i].txGain,  memChan[i].rxGain,
+            memChan[i].rxAmp,    memChan[i].rxBase,  memChan[i].squelch,
+            memChan[i].ctcss,    memChan[i].duplex,
+            memChan[i].repShift, memChan[i].fftbw,   memChan[i].bitsRx,
+            memChan[i].used,     memChan[i].used ? memChan[i].label : "----");
   fclose(f);
 }
 
@@ -2867,12 +2876,18 @@ void loadMemConfig(void)
 {
   FILE *f = fopen("/home/pi/Langstone/Langstone_Mem.conf","r");
   if(!f) return;
-  int i; double fr; int mo, us; char lb[7];
-  while(fscanf(f,"mem%d %lf %d %d %6s\n",&i,&fr,&mo,&us,lb)==5)
+  int i,mo,ba,ta,tg,rg,ra,rb,sq,ct,du,fb,bx,us; double fr,rs; char lb[7];
+  // 17 fields: idx + 15 ints/doubles + label
+  while(fscanf(f,"mem%d %lf %d %d %d %d %d %d %d %d %d %d %lf %d %d %d %6s\n",
+               &i,&fr,&mo,&ba,&ta,&tg,&rg,&ra,&rb,&sq,&ct,&du,&rs,&fb,&bx,&us,lb)==17)
     {
     if(i>=0 && i<NUM_MEM)
       {
-      memChan[i].freq=fr; memChan[i].mode=mo; memChan[i].used=us;
+      memChan[i].freq=fr;   memChan[i].mode=mo;   memChan[i].band=ba;
+      memChan[i].txAmp=ta;  memChan[i].txGain=tg; memChan[i].rxGain=rg;
+      memChan[i].rxAmp=ra;  memChan[i].rxBase=rb; memChan[i].squelch=sq;
+      memChan[i].ctcss=ct;  memChan[i].duplex=du; memChan[i].repShift=rs;
+      memChan[i].fftbw=fb;  memChan[i].bitsRx=bx; memChan[i].used=us;
       strncpy(memChan[i].label,lb,6); memChan[i].label[6]=0;
       }
     }
@@ -3071,8 +3086,6 @@ int memLongPressCheck(void)
   long ms = (now.tv_sec  - lpTouchStart.tv_sec)  * 1000 +
             (now.tv_nsec - lpTouchStart.tv_nsec) / 1000000;
 
-  if(ms < LONGPRESS_MS) return 0;
-
   for(int n=0; n<6; n++)
     {
     int bx = popupX + (n+1)*buttonSpaceX;
@@ -3081,16 +3094,75 @@ int memLongPressCheck(void)
        lpTouchY >= by && lpTouchY <= by+buttonHeight)
       {
       int ch = n + memFirstChan;
-      memChan[ch].freq = freq;
-      memChan[ch].mode = mode;
-      memChan[ch].used = 1;
-      char full[12]; sprintf(full,"%.3f",freq);
-      strncpy(memChan[ch].label,full,6); memChan[ch].label[6]=0;
-      saveMemConfig();
-      clearPopUp();
-      gotoXY(0,settingY); textSize=2; setForeColour(0,220,0);
-      char msg[42]; sprintf(msg,"M%d saved: %.3f MHz",ch+1,freq);
-      displayStr(msg); textSize=1;
+      if(ms >= LONGPRESS_MS)
+        {
+        // LONG PRESS (≥3s) — SAVE current freq+mode (works on any channel)
+        memChan[ch].freq     = freq;
+        memChan[ch].mode     = mode;
+        memChan[ch].band     = band;
+        memChan[ch].txAmp    = bandTxAmp[band];
+        memChan[ch].txGain   = bandTxGain[band];
+        memChan[ch].rxGain   = bandRxGain[band];
+        memChan[ch].rxAmp    = bandRxAmp[band];
+        memChan[ch].rxBase   = bandRxBase[band];
+        memChan[ch].squelch  = bandSquelch[band][mode];
+        memChan[ch].ctcss    = bandCTCSS[band];
+        memChan[ch].duplex   = bandDuplex[band];
+        memChan[ch].repShift = bandRepShift[band];
+        memChan[ch].fftbw    = bandFFTBW[band];
+        memChan[ch].bitsRx   = bandBitsRx[band];
+        memChan[ch].used     = 1;
+        char full[12]; sprintf(full,"%.3f",freq);
+        strncpy(memChan[ch].label,full,6); memChan[ch].label[6]=0;
+        saveMemConfig();
+        clearPopUp();
+        gotoXY(0,settingY); textSize=2; setForeColour(0,220,0);
+        char msg[42]; sprintf(msg,"M%d saved: %.3f MHz",ch+1,freq);
+        displayStr(msg); textSize=1;
+        }
+      else
+        {
+        // SHORT PRESS (<3s) — RECALL if channel has content
+        if(memChan[ch].used)
+          {
+          // Restore band base first (initialises hardware)
+          band = memChan[ch].band;
+          setBand(band);
+          // Override with exact saved snapshot — independent of band arrays
+          bandTxAmp[band]      = memChan[ch].txAmp;
+          bandTxGain[band]     = memChan[ch].txGain;
+          bandRxGain[band]     = memChan[ch].rxGain;
+          bandRxAmp[band]      = memChan[ch].rxAmp;
+          bandRxBase[band]     = memChan[ch].rxBase;
+          bandSquelch[band][memChan[ch].mode] = memChan[ch].squelch;
+          bandCTCSS[band]      = memChan[ch].ctcss;
+          bandDuplex[band]     = memChan[ch].duplex;
+          bandRepShift[band]   = memChan[ch].repShift;
+          bandFFTBW[band]      = memChan[ch].fftbw;
+          bandBitsRx[band]     = memChan[ch].bitsRx;
+          // Apply hardware settings
+          setHackTxAmp(bandTxAmp[band]);
+          setHackTxGain(bandTxGain[band]);
+          setHackRxGain(bandRxGain[band]);
+          setHackRxAmp(bandRxAmp[band]);
+          setHackRxBase(bandRxBase[band]);
+          setSquelch(bandSquelch[band][memChan[ch].mode]);
+          setCTCSS(bandCTCSS[band]);
+          setFFTBW(bandFFTBW[band]);
+          setBandBits(bandBitsRx[band]);
+          // Freq and mode last
+          freq = memChan[ch].freq;
+          mode = memChan[ch].mode;
+          setMode(mode);
+          setFreq(freq);
+          clearPopUp();
+          }
+        // Empty channel + short press: close popup
+        else
+          {
+          clearPopUp();
+          }
+        }
       return 1;
       }
     }
@@ -3486,22 +3558,14 @@ if(popupSel==MEM)
     displayPopupMem();
     return;
     }
-  // Buttons 1-6: short press = RECALL, long press = SAVE (handled on touch end)
+  // Buttons 1-6: do NOT act on touch start
+  // Recall vs Save decision is made on touch END by memLongPressCheck
+  // (which checks duration: <3s = recall, >=3s = save)
   for(int n=0; n<6; n++)
     {
     if(buttonTouched(popupX+(n+1)*buttonSpaceX, popupY))
       {
-      int ch = n + memFirstChan;
-      if(memChan[ch].used)
-        {
-        // RECALL
-        freq = memChan[ch].freq;
-        mode = memChan[ch].mode;
-        setMode(mode);
-        setFreq(freq);
-        clearPopUp();
-        }
-      // Empty channel: do nothing on short press — long press will save
+      // Just consume the touch — action happens on touch end
       return;
       }
     }

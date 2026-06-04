@@ -810,6 +810,19 @@ def docommands(tb):
               # AGC level adjust: Y<dB> e.g. Y0, Y-10, Y+10
               value=int(line[1:])
               tb.set_AGC_Level(value)
+           if line[0]=='J':
+              # AGC mode: J0=OFF J1=FAST J2=MED J3=SLOW J4=LONG
+              value=int(line[1:])
+              # agc2_ff loop gain params (NOT agc3 rate params)
+              params = [
+                (0,     0      ),  # J0 OFF  — bypass
+                (0.2,   0.01   ),  # J1 FAST — τ_attack=0.1ms, τ_decay=2ms
+                (0.1,   0.002  ),  # J2 MED  — τ_attack=0.2ms, τ_decay=10ms
+                (0.05,  0.001  ),  # J3 SLOW — τ_attack=0.4ms, τ_decay=21ms
+                (0.02,  0.0002 ),  # J4 LONG — τ_attack=1.0ms, τ_decay=104ms
+              ]
+              if 0 <= value < len(params):
+                tb.set_AGC_Params(*params[value])
               value=int(line[1:])
               # agc2_ff loop gain params (NOT agc3 rate params)
               params = [
