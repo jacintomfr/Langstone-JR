@@ -3362,25 +3362,23 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*3,funcButtonsY))    // Button4 =SET o
       }
     }
        
-if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = MEM (FREQ) / SNAP+UPGRADE (SETTINGS)
+if(buttonTouched(funcButtonsX+buttonSpaceX*4,funcButtonsY))    //Button 5 = MEM (FREQ) / UPGRDE (SETTINGS)
     {
     if(inputMode==SETTINGS)
       {
-      // SETTINGS mode: Button 4 = SNAP first press, UPGRADE on second press
-      // upgradeConfirm: 0=idle, 1=snap done/waiting upgrade confirm
-      if(upgradeConfirm == 1)
+      // SETTINGS mode: Button 5 = UPGRADE only (two-touch safety)
+      // SNAP is now on Button 2 (dedicated)
+      if(upgradeConfirm == 0)
         {
-        upgradeConfirm = 0;
-        doGitUpgrade();
+        upgradeConfirm = 1;
+        drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SURE?", BTN_WARN);
+        gotoXY(0, settingY); textSize=2; setForeColour(255,50,50);
+        displayStr("Touch UPGRDE again to confirm    ");
+        textSize=1;
         return;
         }
-      // First press: take snapshot and arm upgrade confirm
-      takeSnapshot();
-      upgradeConfirm = 1;
-      drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_WARN);
-      gotoXY(0, settingY); textSize=2; setForeColour(255,50,50);
-      displayStr("Touch SNAP again to UPGRADE     ");
-      textSize=1;
+      upgradeConfirm = 0;
+      doGitUpgrade();
       return;
       }
     else
@@ -5165,10 +5163,10 @@ void takeSnapshot(void)
 void showSettingsMenu(void)
   {
     drawButtonIC7300(funcButtonsX,              funcButtonsY, "MENU",   BTN_OFF);
-    drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "MODE",   BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX, funcButtonsY, "SNAP",   BTN_OFF);
     drawButtonIC7300(funcButtonsX+buttonSpaceX*2, funcButtonsY, "PREV", BTN_OFF);
     drawButtonIC7300(funcButtonsX+buttonSpaceX*3, funcButtonsY, "NEXT", BTN_OFF);
-    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "SNAP", BTN_OFF);
+    drawButtonIC7300(funcButtonsX+buttonSpaceX*4, funcButtonsY, "UPGRDE", BTN_OFF);
     if(portsdownPresent==1)
       {
       drawButtonIC7300(funcButtonsX+buttonSpaceX*5, funcButtonsY, "EXIT",   BTN_DANGER);
