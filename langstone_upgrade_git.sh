@@ -30,13 +30,15 @@ UPGRADE_FILES=(
 )
 BUILD_TARGETS=("GUI_Hack" "GUI_Pluto")
 
-# ── Init log ─────────────────────────────────────────────────────────────────
+# ── Init log — always append, never truncate ─────────────────────────────────
 mkdir -p "$INSTALL_DIR"
 echo "" >> "$LOG"
 echo "════════════════════════════════════════" >> "$LOG"
 echo "Upgrade started: $(date)" >> "$LOG"
-echo "User: $(whoami), PWD: $(pwd)" >> "$LOG"
+echo "Host: $(hostname)  User: $(whoami)" >> "$LOG"
 echo "Script: $0" >> "$LOG"
+LOCAL_VER_INIT=$(grep 'LANGSTONE_VERSION' "$VER_FILE" 2>/dev/null | grep -o '"V[^"]*"' | tr -d '"')
+echo "Current version: ${LOCAL_VER_INIT:-unknown}" >> "$LOG"
 log "Repo: $REPO_URL"
 echo "STARTED" > "$PROGRESS"
 
@@ -64,8 +66,6 @@ sleep 0.3
 msg "2/7 A verificar versao remota..."
 sleep 0.3
 REMOTE_VER_URL="https://raw.githubusercontent.com/jacintomfr/Langstone-JR/main/version.h"
-# Cache-bust URL — prevents GitHub CDN from returning stale version
-REMOTE_VER_URL_NOCACHE="${REMOTE_VER_URL}?$(date +%s)"
 REMOTE_VER_FILE="/tmp/langstone_remote_version.h"
 rm -f "$REMOTE_VER_FILE"
 
@@ -73,8 +73,8 @@ log "Fetching: $REMOTE_VER_URL"
 if command -v curl > /dev/null 2>&1; then
     FETCH_OUT=$(curl -s -L -o "$REMOTE_VER_FILE" -w "%{http_code}" \
         -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
-        --connect-timeout 10 "$REMOTE_VER_URL_NOCACHE" 2>&1)
-    log "curl fetch: http_code=$FETCH_OUT url=$REMOTE_VER_URL_NOCACHE"
+        --connect-timeout 10 "${REMOTE_VER_URL}?t=$(date +%s)" 2>&1)
+    log "curl fetch: http_code=$FETCH_OUT"
 elif command -v wget > /dev/null 2>&1; then
     FETCH_OUT=$(wget -q -O "$REMOTE_VER_FILE" "$REMOTE_VER_URL" 2>&1; echo $?)
     log "wget fetch: $FETCH_OUT"
@@ -111,15 +111,10 @@ if [ "$LOCAL_VER" = "$REMOTE_VER" ]; then
 fi
 
 # Only upgrade if remote is NEWER — compare build numbers (Vxx-yyy)
-LOCAL_BUILD=$(echo "$LOCAL_VER" | grep -o '[0-9]*$' | sed 's/^0*//' )
-REMOTE_BUILD=$(echo "$REMOTE_VER" | grep -o '[0-9]*$' | sed 's/^0*//')
+LOCAL_BUILD=$(echo "$LOCAL_VER" | grep -o '[0-9]*$')
+REMOTE_BUILD=$(echo "$REMOTE_VER" | grep -o '[0-9]*$')
 LOCAL_MAJOR=$(echo "$LOCAL_VER" | grep -o 'V[0-9]*' | grep -o '[0-9]*')
 REMOTE_MAJOR=$(echo "$REMOTE_VER" | grep -o 'V[0-9]*' | grep -o '[0-9]*')
-# Remove leading zeros to ensure numeric comparison
-LOCAL_BUILD=$((10#${LOCAL_BUILD:-0}))
-REMOTE_BUILD=$((10#${REMOTE_BUILD:-0}))
-LOCAL_MAJOR=$((10#${LOCAL_MAJOR:-0}))
-REMOTE_MAJOR=$((10#${REMOTE_MAJOR:-0}))
 log "Local: major=$LOCAL_MAJOR build=$LOCAL_BUILD  Remote: major=$REMOTE_MAJOR build=$REMOTE_BUILD"
 
 # Check if remote is newer
@@ -166,6 +161,7 @@ for f in "${UPGRADE_FILES[@]}"; do
         log "  backed up: $f"
     fi
 done
+[ -f "$INSTALL_DIR/version.h" ] && cp "$INSTALL_DIR/version.h" "$BACKUP_DIR/" 2>> "$LOG"
 for t in "${BUILD_TARGETS[@]}"; do
     [ -f "$INSTALL_DIR/$t" ] && cp "$INSTALL_DIR/$t" "$BACKUP_DIR/" 2>> "$LOG"
 done
@@ -200,48 +196,64 @@ sleep 0.3
 msg "6/7 A compilar..."
 cd "$INSTALL_DIR"
 
-# Critical fix: write version.h with REMOTE_VER-1 so that ./build increments
-# to exactly REMOTE_VER. Without this, build consumes the remote version number
-# and the next upgrade check sees LOCAL==REMOTE and does nothing.
+# CRITICAL FIX: Do NOT use ./build — it auto-increments version.h
+# which causes the next upgrade check to see LOCAL==REMOTE and do nothing.
+# Instead: write version.h with REMOTE_VER first, then compile directly.
 REMOTE_MAJOR_N=$(echo "$REMOTE_VER" | sed 's/V0*//;s/-.*//')
 REMOTE_BUILD_N=$(echo "$REMOTE_VER" | grep -o '[0-9]*$' | sed 's/^0*//')
 [ -z "$REMOTE_BUILD_N" ] && REMOTE_BUILD_N=0
-PRE_BUILD=$((REMOTE_BUILD_N - 1))
-[ $PRE_BUILD -lt 0 ] && PRE_BUILD=0
-PRE_VER=$(printf "V%02d-%03d" $REMOTE_MAJOR_N $PRE_BUILD)
 cat > "$VER_FILE" << VEOF
 #ifndef LANGSTONE_VERSION_H
 #define LANGSTONE_VERSION_H
+// ══════════════════════════════════════════════════════════════
+//  Langstone V3H — Version Header
+//  Format: Vxx-yyy
+//    xx  = official release (increment manually on release)
+//    yyy = development build (auto-incremented by ./build)
+// ══════════════════════════════════════════════════════════════
 #define LANGSTONE_VER_MAJOR  $REMOTE_MAJOR_N
-#define LANGSTONE_VER_BUILD  $PRE_BUILD
-#define LANGSTONE_VERSION    "$PRE_VER"
+#define LANGSTONE_VER_BUILD  $REMOTE_BUILD_N
+#define LANGSTONE_VERSION    "$REMOTE_VER"
 #endif
 VEOF
-log "version.h set to $PRE_VER before build — build will produce $REMOTE_VER"
+log "version.h written: $REMOTE_VER (no auto-increment)"
 
-log "Running: bash ./build"
-BUILD_OUT=$(bash ./build 2>&1)
-BUILD_EXIT=$?
-log "build exit=$BUILD_EXIT"
-log "build output:"
-echo "$BUILD_OUT" >> "$LOG"
-VER_AFTER_BUILD=$(grep 'LANGSTONE_VERSION' "$VER_FILE" 2>/dev/null | grep -o '"V[^"]*"' | tr -d '"')
-log "version.h after build: $VER_AFTER_BUILD (expected $REMOTE_VER)"
-if [ "$VER_AFTER_BUILD" != "$REMOTE_VER" ]; then
-    log "WARNING: version mismatch after build — forcing correct version"
-fi
-if [ $BUILD_EXIT -ne 0 ]; then
+# Compile directly with same flags as ./build
+DIR="$INSTALL_DIR"
+BUILD_FAIL=0
+
+log "Compiling LangstoneGUI_Pluto..."
+PLUTO_OUT=$(cc $DIR/LangstoneGUI_Pluto.c -o $DIR/GUI_Pluto -liio -llgpio -lz -lm 2>&1)
+[ $? -ne 0 ] && { BUILD_FAIL=1; log "GUI_Pluto ERROR: $PLUTO_OUT"; }
+
+log "Compiling LangstoneGUI_Hack..."
+HACK_OUT=$(cc $DIR/LangstoneGUI_Hack.c -o $DIR/GUI_Hack -llgpio -lz -lm -lpthread 2>&1)
+[ $? -ne 0 ] && { BUILD_FAIL=1; log "GUI_Hack ERROR: $HACK_OUT"; }
+
+log "Compiling HW_Test..."
+HW_OUT=$(cc $DIR/HW_Test.c -o $DIR/HW_Test -llgpio 2>&1)
+[ $? -ne 0 ] && { BUILD_FAIL=1; log "HW_Test ERROR: $HW_OUT"; }
+
+log "Compiling Pluto_Test..."
+PT_OUT=$(cc $DIR/Pluto_Test.c -o $DIR/Pluto_Test -liio 2>&1)
+[ $? -ne 0 ] && { BUILD_FAIL=1; log "Pluto_Test ERROR: $PT_OUT"; }
+
+# Lime is optional
+cc $DIR/LangstoneGUI_Lime.c -o $DIR/GUI_Lime -llgpio 2>/dev/null || true
+
+if [ $BUILD_FAIL -ne 0 ]; then
     err "Build falhou - a restaurar backup"
-    log "Build errors: $BUILD_OUT"
     for f in "${UPGRADE_FILES[@]}"; do
         [ -f "$BACKUP_DIR/$f" ] && cp "$BACKUP_DIR/$f" "$INSTALL_DIR/$f"
     done
     for t in "${BUILD_TARGETS[@]}"; do
         [ -f "$BACKUP_DIR/$t" ] && cp "$BACKUP_DIR/$t" "$INSTALL_DIR/$t"
     done
+    [ -f "$BACKUP_DIR/version.h" ] && cp "$BACKUP_DIR/version.h" "$INSTALL_DIR/version.h"
     rm -rf "$CLONE_DIR"
     exit 1
 fi
+log "Build OK: $REMOTE_VER"
 ok "6/7 Build OK"
 sleep 0.3
 
@@ -253,23 +265,11 @@ ls -dt "$INSTALL_DIR"/backup_* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/nu
 ok "7/7 Concluido"
 sleep 0.2
 
-# Rewrite version.h completely — more reliable than sed with version strings
-REMOTE_MAJOR_N=$(echo "$REMOTE_VER" | sed 's/V0*//;s/-.*//')
-REMOTE_BUILD_N=$(echo "$REMOTE_VER" | grep -o '[0-9]*$' | sed 's/^0*//')
-[ -z "$REMOTE_BUILD_N" ] && REMOTE_BUILD_N=0
-cat > "$VER_FILE" << VEOF
-#ifndef LANGSTONE_VERSION_H
-#define LANGSTONE_VERSION_H
-#define LANGSTONE_VER_MAJOR  $REMOTE_MAJOR_N
-#define LANGSTONE_VER_BUILD  $REMOTE_BUILD_N
-#define LANGSTONE_VERSION    "$REMOTE_VER"
-#endif
-VEOF
-# Verify write succeeded
+# Verify version.h is correct (was written before compilation)
 WRITTEN=$(grep 'LANGSTONE_VERSION' "$VER_FILE" 2>/dev/null | grep -o '"V[^"]*"' | tr -d '"')
-log "version.h rewritten: expected=$REMOTE_VER written=$WRITTEN"
+log "version.h final check: expected=$REMOTE_VER written=$WRITTEN"
 if [ "$WRITTEN" != "$REMOTE_VER" ]; then
-    err "version.h write failed: got '$WRITTEN' expected '$REMOTE_VER'"
+    err "version.h incorreto: got '$WRITTEN' expected '$REMOTE_VER'"
     exit 1
 fi
 
