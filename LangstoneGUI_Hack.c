@@ -1026,13 +1026,10 @@ void waterfall()
       }
     }
 
-  // ── Outer borders ────────────────────────────────────────────────
-  int wf_bot = FFTY + 3 + rows;   // bottom of waterfall
-  drawRoundBox(137, 129, 654, wf_bot+1, 160,160,160);
-  drawLine(138, 216, 653, 216, 160,160,160);  // spectrum/waterfall divider
+  // ── Outer borders drawn once in initGUI — not redrawn here ─────────────
 
-  // ── 5. Clear spectrum area (drawLine per row, faster than setPixel loop)
-  for(int r = 0; r < spectrum_rows + 1; r++)
+  // ── 5. Clear spectrum area — stop at FFTY-1 to preserve divider line ───
+  for(int r = 1; r < spectrum_rows + 1; r++)
     drawLine(FFTX, FFTY - r, FFTX + points - 1, FFTY - r, 0, 0, 0);
 
   // ── Pre-compute spectrum levels for current row ──────────────────
@@ -2579,6 +2576,11 @@ void initGUI()
     // Version display — static, drawn once at startup
     textSize=1; setForeColour(255,220,0);
     gotoXY(5,76); displayStr(LANGSTONE_VERSION);
+    // FFT border and spectrum/waterfall divider — drawn once here,
+    // NOT redrawn every waterfall() frame to avoid flash artifacts
+    { int wf_bot = FFTY + 3 + rows;
+      drawRoundBox(137, 129, 654, wf_bot+1, 160,160,160);
+      drawLine(138, FFTY, 653, FFTY, 160,160,160); }
 }
 
 
